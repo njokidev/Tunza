@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "Tunza",
+    "slug": "tunza",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.tunza.app",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Tunza needs your location to show caregivers near you and track active care sessions.",
+        "NSLocationAlwaysUsageDescription": "Tunza uses your location during active care sessions to keep patients updated."
+      }
+    },
+    "android": {
+      "package": "com.tunza.app",
+      "permissions": [
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_COARSE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Tunza uses location to track active care sessions."
+        }
+      ],
+      "expo-secure-store"
+    ]
+  }
+}
