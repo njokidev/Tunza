@@ -11,7 +11,7 @@
 | Backend  | Django 5 + Django REST Framework |
 | Auth     | JWT (SimpleJWT) with auto-refresh |
 | Mobile   | React Native + Expo |
-| Database | SQLite (dev) / PostgreSQL (prod) |
+| Database | PostgreSQL|
 | Payments | M-Pesa Daraja STK Push |
 | Location | Expo Location + real-time GPS polling |
 
