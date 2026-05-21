@@ -8,6 +8,7 @@ class BookingSerializer(serializers.ModelSerializer):
     patient   = UserSerializer(read_only=True)
     caregiver = CaregiverProfileSerializer(read_only=True)
     caregiver_id = serializers.UUIDField(write_only=True)
+    review = serializers.UUIDField(source='review.id', read_only=True)
 
     class Meta:
         model  = Booking
@@ -15,7 +16,7 @@ class BookingSerializer(serializers.ModelSerializer):
             'id', 'patient', 'caregiver', 'caregiver_id',
             'care_type', 'status', 'start_date', 'end_date',
             'address', 'latitude', 'longitude', 'special_needs',
-            'total_amount', 'is_paid', 'notes', 'created_at',
+            'total_amount', 'is_paid', 'notes', 'review', 'created_at',
         ]
         read_only_fields = ['id', 'patient', 'status', 'total_amount', 'is_paid', 'created_at']
 
