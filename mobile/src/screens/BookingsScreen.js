@@ -3,9 +3,9 @@ import {
   View, Text, StyleSheet, FlatList, TouchableOpacity,
   RefreshControl, Alert,
 } from 'react-native';
-import { bookingApi } from '../../api';
-import { Card, Badge, Avatar, Button, COLORS, Empty, LoadingScreen } from '../../components/ui';
-import { useAuth } from '../../context/AuthContext';
+import { bookingApi } from '../api';
+import { Card, Badge, Avatar, Button, COLORS, Empty, LoadingScreen } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
 import { format } from 'date-fns';
 
 export default function BookingsScreen({ navigation }) {

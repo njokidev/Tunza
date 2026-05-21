@@ -17,6 +17,7 @@ import BookingsScreen       from '../screens/BookingsScreen';
 import ChatScreen           from '../screens/ChatScreen';
 import ConversationsScreen  from '../screens/ConversationsScreen';
 import AccountScreen        from '../screens/AccountScreen';
+import NotificationsScreen  from '../screens/NotificationsScreen';
 
 // Patient
 import PatientHomeScreen       from '../screens/patient/HomeScreen';
@@ -138,7 +139,7 @@ function RootNavigator() {
           <Stack.Screen name="TrackCaregiver"   component={TrackCaregiverScreen}   options={{ headerShown: true, title: 'Track Caregiver' }} />
           <Stack.Screen name="Review"           component={ReviewScreen}           options={{ headerShown: true, title: 'Leave Review' }} />
           <Stack.Screen name="Chat"             component={ChatScreen}             options={{ headerShown: true }} />
-          <Stack.Screen name="Notifications"    component={AccountScreen}          options={{ headerShown: true, title: 'Notifications' }} />
+          <Stack.Screen name="Notifications"    component={NotificationsScreen}    options={{ headerShown: true, title: 'Notifications' }} />
         </>
       ) : user.role === 'caregiver' ? (
         // Caregiver flow

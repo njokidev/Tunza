@@ -3,9 +3,9 @@ import {
   View, Text, StyleSheet, FlatList, TextInput,
   TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator,
 } from 'react-native';
-import { messageApi } from '../../api';
-import { Avatar, COLORS } from '../../components/ui';
-import { useAuth } from '../../context/AuthContext';
+import { messageApi } from '../api';
+import { Avatar, COLORS } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
 import { format } from 'date-fns';
 
 export default function ChatScreen({ route, navigation }) {

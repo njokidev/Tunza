@@ -3,9 +3,9 @@ import {
   View, Text, StyleSheet, FlatList,
   TouchableOpacity, RefreshControl,
 } from 'react-native';
-import { messageApi } from '../../api';
-import { Avatar, COLORS, Empty, LoadingScreen } from '../../components/ui';
-import { useAuth } from '../../context/AuthContext';
+import { messageApi } from '../api';
+import { Avatar, COLORS, Empty, LoadingScreen } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
 import { formatDistanceToNow } from 'date-fns';
 
 export default function ConversationsScreen({ navigation }) {

@@ -1,11 +1,10 @@
 import React, { useState } from 'react';
 import {
-  View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity,
+  View, Text, StyleSheet, ScrollView, Alert,
 } from 'react-native';
-import * as ImagePicker from 'expo-image-picker';
-import { authApi } from '../../api';
-import { useAuth } from '../../context/AuthContext';
-import { Avatar, Input, Button, Card, COLORS, Badge } from '../../components/ui';
+import { authApi } from '../api';
+import { useAuth } from '../context/AuthContext';
+import { Avatar, Input, Button, Card, COLORS, Badge } from '../components/ui';
 
 export default function AccountScreen() {
   const { user, updateUser, logout }   = useAuth();
