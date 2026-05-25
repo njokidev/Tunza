@@ -1,4 +1,4 @@
-# 🤝 Tunza — Caregiver Marketplace Platform
+��# 🤝 Tunza — Caregiver Marketplace Platform
 
 > Connecting patients requiring palliative or long-term care with qualified caregivers in Kenya.
 
@@ -11,6 +11,7 @@
 | Backend  | Django 5 + Django REST Framework |
 | Auth     | JWT (SimpleJWT) with auto-refresh |
 | Mobile   | React Native + Expo |
+
 | Database | PostgreSQL|
 | Payments | M-Pesa Daraja STK Push |
 | Location | Expo Location + real-time GPS polling |
@@ -75,9 +76,29 @@ npm install
 npx expo start
 ```
 
-> ⚠️ **Important:** When testing on a physical phone, change `BASE_URL` in  
-> `src/api/index.js` from `127.0.0.1` to your computer's local IP address  
-> (e.g. `192.168.1.10`). Your phone and laptop must be on the same WiFi network.
+Create `mobile/.env` from `mobile/.env.example`, then set `EXPO_PUBLIC_API_URL` to your backend URL.  
+Examples:
+- Android emulator: `http://10.0.2.2:8000/api`
+- iOS simulator / same machine: `http://127.0.0.1:8000/api`
+- Physical phone on same WiFi: `http://192.168.1.10:8000/api`
+
+Your phone and laptop must be on the same WiFi network.
+
+### 4. Run full app (Windows helper)
+
+```powershell
+.\scripts\run-full-app.ps1
+```
+
+Optional host override:
+
+```powershell
+.\scripts\run-full-app.ps1 -ApiHost 192.168.1.10
+```
+
+This opens two terminals:
+- Django backend on `0.0.0.0:8000`
+- Expo dev server with `EXPO_PUBLIC_API_URL` pre-set
 
 ---
 
@@ -86,7 +107,7 @@ npx expo start
 ### Auth  `POST /api/auth/`
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
-| `register/` | POST | None | Create account (patient or caregiver) |
+| `register/` | POST | None | Create account (patient or caregiver|
 | `login/` | POST | None | Returns access + refresh tokens + user |
 | `logout/` | POST | JWT | Blacklists refresh token |
 | `token/refresh/` | POST | None | Get new access token |
@@ -122,7 +143,7 @@ npx expo start
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
 | `initiate/` | POST | Patient | Trigger M-Pesa STK Push |
-| `mpesa/callback/` | POST | None | Safaricom callback (public) |
+| `mpesa/callback/` | POST | None | Safaricom callback (public|
 | `status/{booking_id}/` | GET | JWT | Check payment status |
 
 ### Locations  `POST /api/locations/`

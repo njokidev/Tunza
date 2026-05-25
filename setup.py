@@ -20,16 +20,19 @@ print("="*50)
 
 # 1. Create virtualenv
 if not os.path.exists(os.path.join(BACKEND, "venv")):
-    run("python3 -m venv venv", cwd=BACKEND)
+    run(f'"{sys.executable}" -m venv venv', cwd=BACKEND)
     print("✅ Virtual environment created")
 else:
     print("ℹ️  Virtual environment already exists")
 
-pip = os.path.join(BACKEND, "venv", "bin", "pip")
-python = os.path.join(BACKEND, "venv", "bin", "python")
+scripts_dir = "Scripts" if os.name == "nt" else "bin"
+pip_name = "pip.exe" if os.name == "nt" else "pip"
+python_name = "python.exe" if os.name == "nt" else "python"
+pip = os.path.join(BACKEND, "venv", scripts_dir, pip_name)
+python = os.path.join(BACKEND, "venv", scripts_dir, python_name)
 
 # 2. Install requirements
-run(f"{pip} install -r requirements.txt", cwd=BACKEND)
+run(f'"{pip}" install -r requirements.txt', cwd=BACKEND)
 
 # 3. Create .env if not exists
 env_path = os.path.join(BACKEND, ".env")
@@ -41,10 +44,10 @@ else:
     print("ℹ️  .env already exists")
 
 # 4. Migrate
-run(f"{python} manage.py migrate", cwd=BACKEND)
+run(f'"{python}" manage.py migrate', cwd=BACKEND)
 
 # 5. Seed specializations
-seed_cmd = f"""{python} -c "
+seed_cmd = f"""\"{python}\" -c "
 import django, os
 os.environ['DJANGO_SETTINGS_MODULE'] = 'tunza.settings'
 django.setup()
@@ -65,14 +68,15 @@ run(seed_cmd, cwd=BACKEND)
 print("\n" + "="*50)
 print("  Create your admin superuser")
 print("="*50)
-run(f"{python} manage.py createsuperuser", cwd=BACKEND)
+run(f'"{python}" manage.py createsuperuser', cwd=BACKEND)
 
 print("\n" + "="*50)
 print("  ✅ Setup complete!")
 print("="*50)
+activate_cmd = "venv\\Scripts\\Activate.ps1" if os.name == "nt" else "source venv/bin/activate"
 print(f"""
 Next steps:
-  1. cd backend && source venv/bin/activate
+  1. cd backend && {activate_cmd}
   2. python manage.py runserver
   3. Visit http://127.0.0.1:8000/admin to manage users
 

@@ -3,7 +3,7 @@ import {
   View, Text, StyleSheet, ScrollView,
   TouchableOpacity, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
-import { authApi } from '../../api';
+import { authApi, BASE_URL } from '../../api';
 import { Button, Input, COLORS } from '../../components/ui';
 
 const ROLES = [
@@ -43,7 +43,12 @@ export default function RegisterScreen({ navigation }) {
       );
     } catch (err) {
       const data = err.response?.data || {};
-      const msg  = Object.values(data).flat().join('\n') || 'Registration failed.';
+      const apiMsg = Object.values(data).flat().join('\n');
+      const msg = apiMsg || (
+        err.response
+          ? 'Registration failed.'
+          : `Cannot reach server at ${BASE_URL}. Check your API URL and backend network access.`
+      );
       Alert.alert('Error', msg);
     } finally {
       setLoading(false);

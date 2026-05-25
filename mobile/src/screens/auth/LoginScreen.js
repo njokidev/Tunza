@@ -4,6 +4,7 @@ import {
   TouchableOpacity, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { useAuth } from '../../context/AuthContext';
+import { BASE_URL } from '../../api';
 import { Button, Input, COLORS } from '../../components/ui';
 
 export default function LoginScreen({ navigation }) {
@@ -27,7 +28,11 @@ export default function LoginScreen({ navigation }) {
       const user = await login(form.email.trim(), form.password);
       // Navigation handled by root navigator based on user.role
     } catch (err) {
-      const msg = err.response?.data?.detail || 'Invalid email or password.';
+      const msg = err.response?.data?.detail || (
+        err.response
+          ? 'Invalid email or password.'
+          : `Cannot reach server at ${BASE_URL}. Check your API URL and backend network access.`
+      );
       Alert.alert('Login Failed', msg);
     } finally {
       setLoading(false);
