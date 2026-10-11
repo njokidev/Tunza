@@ -1,10 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View, Text, StyleSheet, FlatList,
-  TouchableOpacity, RefreshControl,
-} from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity, RefreshControl } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import { messageApi } from '../api';
 import { Avatar, COLORS, Empty, LoadingScreen } from '../components/ui';
+import { COLORS as C, GRADIENT, RADIUS, TYPE } from '../theme';
 import { useAuth } from '../context/AuthContext';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -24,85 +23,91 @@ export default function ConversationsScreen({ navigation }) {
 
   useEffect(() => {
     fetch();
-    const interval = setInterval(fetch, 5000); // poll for new convs
+    const interval = setInterval(fetch, 5000);
     return () => clearInterval(interval);
   }, []);
 
+  if (loading) return <LoadingScreen />;
+
   const renderConv = ({ item }) => {
-    const other     = item.participants?.find(p => p.id !== user.id);
-    const lastMsg   = item.last_message;
-    const unread    = item.unread_count || 0;
+    const other   = item.participants?.find(p => p.id !== user.id);
+    const lastMsg = item.last_message;
+    const unread  = item.unread_count || 0;
 
     return (
-      <TouchableOpacity
-        style={styles.row}
+      <TouchableOpacity activeOpacity={0.92}
+        style={s.row}
         onPress={() => navigation.navigate('Chat', {
-          convId:      item.id,
-          otherUserId: other?.id,
-          otherName:   other?.full_name,
-        })}
-      >
-        <View style={styles.avatarWrap}>
-          <Avatar uri={other?.avatar} name={other?.full_name} size={50} />
+          convId: item.id, otherUserId: other?.id, otherName: other?.full_name,
+        })}>
+        <View style={{ position: 'relative' }}>
+          <Avatar uri={other?.avatar} name={other?.full_name} size={52} />
           {unread > 0 && (
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{unread > 9 ? '9+' : unread}</Text>
+            <View style={s.badge}>
+              <Text style={s.badgeTxt}>{unread > 9 ? '9+' : unread}</Text>
             </View>
           )}
         </View>
-        <View style={styles.info}>
-          <View style={styles.topRow}>
-            <Text style={[styles.name, unread > 0 && { fontWeight: '800' }]}>{other?.full_name}</Text>
+        <View style={s.info}>
+          <View style={s.topRow}>
+            <Text style={[s.name, unread > 0 && { fontWeight: '800' }]}>{other?.full_name}</Text>
             {lastMsg && (
-              <Text style={styles.time}>
+              <Text style={TYPE.micro}>
                 {formatDistanceToNow(new Date(lastMsg.created_at), { addSuffix: false })}
               </Text>
             )}
           </View>
-          <Text
-            style={[styles.preview, unread > 0 && { color: COLORS.text, fontWeight: '600' }]}
-            numberOfLines={1}
-          >
+          <Text style={[s.preview, unread > 0 && { color: C.text, fontWeight: '600' }]} numberOfLines={1}>
             {lastMsg
               ? (lastMsg.sender?.id === user.id ? 'You: ' : '') + lastMsg.body
-              : 'Start a conversation'}
+              : 'Start the conversation'}
           </Text>
         </View>
+        {unread > 0 && <View style={s.activeDot} />}
       </TouchableOpacity>
     );
   };
 
-  if (loading) return <LoadingScreen />;
-
   return (
-    <View style={{ flex: 1, backgroundColor: COLORS.bg }}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Messages</Text>
-      </View>
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
+      <LinearGradient colors={GRADIENT.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.header}>
+        <Text style={s.headerTitle}>Messages</Text>
+        {convs.length > 0 && (
+          <Text style={s.headerSub}>{convs.length} conversation{convs.length !== 1 ? 's' : ''}</Text>
+        )}
+      </LinearGradient>
+
       <FlatList
         data={convs}
         keyExtractor={i => i.id}
         renderItem={renderConv}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetch(); }} colors={[COLORS.primary]} />}
-        ListEmptyComponent={<Empty icon="💬" title="No conversations yet" subtitle="Book a caregiver to start messaging" />}
+        refreshControl={
+          <RefreshControl refreshing={refreshing}
+            onRefresh={() => { setRefreshing(true); fetch(); }}
+            colors={[C.primary]} tintColor={C.primary} />
+        }
+        ItemSeparatorComponent={() => <View style={s.sep} />}
+        ListEmptyComponent={
+          <Empty icon="💬" title="No conversations yet"
+            subtitle="Messages from patients or caregivers will appear here" />
+        }
         showsVerticalScrollIndicator={false}
-        ItemSeparatorComponent={() => <View style={styles.sep} />}
       />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  header:     { paddingHorizontal: 20, paddingTop: 56, paddingBottom: 14, backgroundColor: COLORS.card, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  title:      { fontSize: 22, fontWeight: '800', color: COLORS.text },
-  row:        { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: COLORS.card, gap: 14 },
-  avatarWrap: { position: 'relative' },
-  badge:      { position: 'absolute', top: -2, right: -2, backgroundColor: COLORS.danger, borderRadius: 10, minWidth: 18, height: 18, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
-  badgeText:  { color: '#fff', fontSize: 10, fontWeight: '800' },
-  info:       { flex: 1 },
-  topRow:     { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
-  name:       { fontSize: 16, fontWeight: '700', color: COLORS.text },
-  time:       { fontSize: 12, color: COLORS.muted },
-  preview:    { fontSize: 14, color: COLORS.muted },
-  sep:        { height: 1, backgroundColor: COLORS.border, marginLeft: 78 },
+const s = StyleSheet.create({
+  header:      { paddingTop: 56, paddingBottom: 20, paddingHorizontal: 20 },
+  headerTitle: { fontSize: 22, fontWeight: '800', color: '#fff' },
+  headerSub:   { fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 4 },
+  row:         { flexDirection: 'row', alignItems: 'center', padding: 16, backgroundColor: C.card, gap: 14 },
+  badge:       { position: 'absolute', top: -2, right: -2, backgroundColor: C.primary, borderRadius: 10, minWidth: 18, height: 18, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4, borderWidth: 2, borderColor: C.card },
+  badgeTxt:    { color: '#fff', fontSize: 9, fontWeight: '800' },
+  info:        { flex: 1 },
+  topRow:      { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 },
+  name:        { fontSize: 15, fontWeight: '700', color: C.text },
+  preview:     { fontSize: 13, color: C.textMuted },
+  activeDot:   { width: 8, height: 8, borderRadius: 4, backgroundColor: C.primary, flexShrink: 0 },
+  sep:         { height: 1, backgroundColor: C.borderLight, marginLeft: 82 },
 });

@@ -1,108 +1,118 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import { LinearGradient } from 'expo-linear-gradient';
 import { locationApi } from '../../api';
-import { COLORS, Card } from '../../components/ui';
+import { Card, COLORS } from '../../components/ui';
+import { COLORS as C, GRADIENT, RADIUS, SHADOWS, TYPE } from '../../theme';
 
-export default function TrackCaregiverScreen({ route }) {
-  const { bookingId }             = route.params;
-  const [location, setLocation]   = useState(null);
-  const [error,    setError]      = useState(null);
-  const [loading,  setLoading]    = useState(true);
-  const mapRef                    = useRef(null);
+export default function TrackCaregiverScreen({ route, navigation }) {
+  const { bookingId }           = route.params;
+  const [location, setLocation] = useState(null);
+  const [error,    setError]    = useState(null);
+  const [loading,  setLoading]  = useState(true);
+  const [lastSeen, setLastSeen] = useState(null);
+  const mapRef                  = useRef(null);
 
   const fetchLocation = async () => {
     try {
       const { data } = await locationApi.get(bookingId);
       setLocation(data);
+      setLastSeen(new Date());
       setError(null);
-      // Re-center map
       mapRef.current?.animateToRegion({
-        latitude:       data.latitude,
-        longitude:      data.longitude,
-        latitudeDelta:  0.01,
-        longitudeDelta: 0.01,
-      }, 800);
+        latitude: data.latitude, longitude: data.longitude,
+        latitudeDelta: 0.008, longitudeDelta: 0.008,
+      }, 600);
     } catch (e) {
-      if (e.response?.status === 404) {
-        setError('Caregiver location not yet shared. They may not have started yet.');
-      }
-    } finally {
-      setLoading(false);
-    }
+      if (e.response?.status === 404)
+        setError('Caregiver hasn\'t shared their location yet.');
+    } finally { setLoading(false); }
   };
 
   useEffect(() => {
     fetchLocation();
     const interval = setInterval(fetchLocation, 5000);
     return () => clearInterval(interval);
-  }, [bookingId]);
+  }, []);
 
-  const defaultRegion = {
-    latitude: -1.286389, longitude: 36.817223,  // Nairobi CBD
-    latitudeDelta: 0.05, longitudeDelta: 0.05,
-  };
+  const nairobi = { latitude: -1.286389, longitude: 36.817223, latitudeDelta: 0.05, longitudeDelta: 0.05 };
 
   return (
     <View style={{ flex: 1 }}>
+      {/* Map fills screen */}
       <MapView
         ref={mapRef}
         provider={PROVIDER_GOOGLE}
         style={StyleSheet.absoluteFill}
-        initialRegion={defaultRegion}
+        initialRegion={nairobi}
         showsUserLocation
         showsMyLocationButton
+        showsCompass
       >
         {location && (
-          <Marker
-            coordinate={{ latitude: location.latitude, longitude: location.longitude }}
-            title={location.caregiver}
-            description="Your caregiver's current location"
-          >
-            <View style={styles.caregiverMarker}>
-              <Text style={{ fontSize: 26 }}>👩‍⚕️</Text>
+          <Marker coordinate={{ latitude: location.latitude, longitude: location.longitude }}
+            title={location.caregiver} description="Your caregiver's live location">
+            <View style={s.pin}>
+              <LinearGradient colors={GRADIENT.primary} style={s.pinGrad}>
+                <Text style={{ fontSize: 22 }}>👩‍⚕️</Text>
+              </LinearGradient>
+              <View style={s.pinTail} />
             </View>
           </Marker>
         )}
       </MapView>
 
-      {/* Info card overlay */}
-      <View style={styles.overlay}>
+      {/* Back button */}
+      <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
+        <Text style={{ color: C.primary, fontWeight: '700', fontSize: 16 }}>←</Text>
+      </TouchableOpacity>
+
+      {/* Status card at bottom */}
+      <View style={s.overlay}>
         {loading ? (
-          <Card style={styles.card}>
-            <ActivityIndicator color={COLORS.primary} />
-            <Text style={styles.cardText}>Locating caregiver...</Text>
+          <Card style={s.statusCard}>
+            <ActivityIndicator color={C.primary} />
+            <Text style={[TYPE.body, { marginLeft: 12 }]}>Locating caregiver...</Text>
           </Card>
         ) : error ? (
-          <Card style={styles.card}>
-            <Text style={styles.errorText}>📍 {error}</Text>
+          <Card style={s.statusCard}>
+            <Text style={{ fontSize: 24 }}>📍</Text>
+            <Text style={[TYPE.body, { flex: 1, marginLeft: 12, color: C.textMuted }]}>{error}</Text>
           </Card>
         ) : location ? (
-          <Card style={styles.card}>
-            <View style={styles.dot} />
-            <View>
-              <Text style={styles.caregiverName}>👩‍⚕️ {location.caregiver}</Text>
-              <Text style={styles.cardText}>
-                Last updated {new Date(location.timestamp).toLocaleTimeString()}
-              </Text>
+          <View style={[s.liveCard, SHADOWS.lg]}>
+            <LinearGradient colors={GRADIENT.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.liveGrad}>
+              <View style={s.liveDot} />
+              <View style={{ flex: 1 }}>
+                <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>
+                  👩‍⚕️ {location.caregiver}
+                </Text>
+                <Text style={{ color: 'rgba(255,255,255,0.75)', fontSize: 12, marginTop: 2 }}>
+                  Live location · Updated {lastSeen ? lastSeen.toLocaleTimeString() : '—'}
+                </Text>
+              </View>
               {location.accuracy && (
-                <Text style={styles.accuracy}>Accuracy: ±{Math.round(location.accuracy)}m</Text>
+                <Text style={{ color: 'rgba(255,255,255,0.65)', fontSize: 11 }}>
+                  ±{Math.round(location.accuracy)}m
+                </Text>
               )}
-            </View>
-          </Card>
+            </LinearGradient>
+          </View>
         ) : null}
       </View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  overlay:        { position: 'absolute', bottom: 40, left: 16, right: 16 },
-  card:           { flexDirection: 'row', alignItems: 'center', gap: 12 },
-  caregiverMarker:{ backgroundColor: '#fff', borderRadius: 30, padding: 4, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 6, elevation: 6 },
-  dot:            { width: 12, height: 12, borderRadius: 6, backgroundColor: COLORS.success },
-  caregiverName:  { fontSize: 16, fontWeight: '700', color: COLORS.text },
-  cardText:       { fontSize: 13, color: COLORS.muted, marginTop: 2 },
-  accuracy:       { fontSize: 11, color: COLORS.muted, marginTop: 2 },
-  errorText:      { fontSize: 14, color: COLORS.muted },
+const s = StyleSheet.create({
+  backBtn:  { position: 'absolute', top: 56, left: 16, width: 40, height: 40, borderRadius: 20, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center', ...SHADOWS.md },
+  overlay:  { position: 'absolute', bottom: 40, left: 16, right: 16 },
+  statusCard:{ flexDirection: 'row', alignItems: 'center' },
+  pin:       { alignItems: 'center' },
+  pinGrad:   { width: 48, height: 48, borderRadius: 24, alignItems: 'center', justifyContent: 'center', borderWidth: 3, borderColor: '#fff', ...SHADOWS.md },
+  pinTail:   { width: 0, height: 0, borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 10, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: C.primaryDark, marginTop: -2 },
+  liveCard:  { borderRadius: RADIUS.lg, overflow: 'hidden' },
+  liveGrad:  { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 },
+  liveDot:   { width: 10, height: 10, borderRadius: 5, backgroundColor: '#4ADE80', flexShrink: 0 },
 });

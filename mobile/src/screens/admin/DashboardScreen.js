@@ -1,55 +1,41 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
-  Alert, RefreshControl,
-} from 'react-native';
+import { View, Text, StyleSheet, FlatList, TouchableOpacity,
+  Alert, RefreshControl, ScrollView } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import api, { authApi } from '../../api';
-import { Card, Avatar, Badge, Button, COLORS, LoadingScreen, Empty } from '../../components/ui';
+import { Avatar, Badge, Button, COLORS, Empty, LoadingScreen } from '../../components/ui';
+import { COLORS as C, GRADIENT, RADIUS, SHADOWS, TYPE } from '../../theme';
 
 export default function AdminDashboardScreen({ navigation }) {
-  const [users,     setUsers]     = useState([]);
-  const [bookings,  setBookings]  = useState([]);
-  const [tab,       setTab]       = useState('users');
-  const [loading,   setLoading]   = useState(true);
-  const [refreshing,setRefreshing]= useState(false);
+  const [users,      setUsers]      = useState([]);
+  const [bookings,   setBookings]   = useState([]);
+  const [tab,        setTab]        = useState('users');
+  const [loading,    setLoading]    = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
   const fetchAll = useCallback(async () => {
     try {
       const [uRes, bRes] = await Promise.all([
-        authApi.notifications().catch(() => ({ data: [] })), // reuse — we call users directly
+        api.get('/auth/users/'),
         api.get('/bookings/admin/all/'),
       ]);
-      const usersRes = await api.get('/auth/users/');
-      setUsers(usersRes.data.results || usersRes.data);
+      setUsers(uRes.data.results   || uRes.data);
       setBookings(bRes.data.results || bRes.data);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); setRefreshing(false); }
   }, []);
 
   useEffect(() => { fetchAll(); }, []);
 
-  const verifyUser = async (userId, name) => {
-    Alert.alert(`Verify ${name}?`, 'This marks the caregiver as verified on the platform.', [
+  const verifyUser = (userId, name) => {
+    Alert.alert(`Verify ${name}?`, 'This caregiver will appear in patient search results.', [
       { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Verify',
-        onPress: async () => {
-          try {
-            await api.patch(`/auth/users/${userId}/verify/`);
-            fetchAll();
-          } catch {
-            Alert.alert('Error', 'Could not verify user.');
-          }
-        },
-      },
+      { text: 'Verify ✅', onPress: async () => {
+        try { await authApi.verifyUser(userId); fetchAll(); }
+        catch { Alert.alert('Error', 'Could not verify user.'); }
+      }},
     ]);
   };
-
-  const TABS = ['users', 'bookings'];
 
   const stats = {
     patients:   users.filter(u => u.role === 'patient').length,
@@ -57,122 +43,124 @@ export default function AdminDashboardScreen({ navigation }) {
     verified:   users.filter(u => u.is_verified).length,
     pending:    bookings.filter(b => b.status === 'pending').length,
     completed:  bookings.filter(b => b.status === 'completed').length,
+    revenue:    bookings.filter(b => b.is_paid).reduce((s, b) => s + parseFloat(b.final_amount || 0), 0),
   };
 
   if (loading) return <LoadingScreen />;
 
   return (
-    <View style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Admin Dashboard</Text>
-      </View>
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
 
-      {/* Stats */}
-      <View style={styles.statsGrid}>
-        {[
-          { label: 'Patients',   value: stats.patients,   icon: '🏥' },
-          { label: 'Caregivers', value: stats.caregivers, icon: '👩‍⚕️' },
-          { label: 'Verified',   value: stats.verified,   icon: '✅' },
-          { label: 'Bookings',   value: bookings.length,  icon: '📅' },
-        ].map(s => (
-          <Card key={s.label} style={styles.statCard}>
-            <Text style={styles.statIcon}>{s.icon}</Text>
-            <Text style={styles.statNumber}>{s.value}</Text>
-            <Text style={styles.statLabel}>{s.label}</Text>
-          </Card>
-        ))}
-      </View>
+      <FlatList
+        data={tab === 'users' ? users : bookings}
+        keyExtractor={i => i.id}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing}
+            onRefresh={() => { setRefreshing(true); fetchAll(); }}
+            colors={[C.primary]} />
+        }
+        ListHeaderComponent={
+          <>
+            {/* ── Header ── */}
+            <LinearGradient colors={GRADIENT.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.header}>
+              <Text style={s.headerTitle}>Admin Dashboard</Text>
+              <Text style={s.headerSub}>Tunza platform overview</Text>
 
-      {/* Tabs */}
-      <View style={styles.tabRow}>
-        {TABS.map(t => (
-          <TouchableOpacity key={t} style={[styles.tab, tab === t && styles.tabActive]} onPress={() => setTab(t)}>
-            <Text style={[styles.tabText, tab === t && { color: COLORS.primary }]}>
-              {t.charAt(0).toUpperCase() + t.slice(1)}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
+              {/* Stats grid */}
+              <View style={s.statsGrid}>
+                {[
+                  { icon:'🏥', val: stats.patients,   lbl:'Patients' },
+                  { icon:'👩‍⚕️', val: stats.caregivers, lbl:'Caregivers' },
+                  { icon:'✅', val: stats.verified,   lbl:'Verified' },
+                  { icon:'📅', val: bookings.length,  lbl:'Bookings' },
+                  { icon:'✔', val: stats.completed,   lbl:'Completed' },
+                  { icon:'💰', val:`${stats.revenue.toLocaleString()}`, lbl:'KES Paid' },
+                ].map((st, i) => (
+                  <View key={i} style={s.statCard}>
+                    <Text style={s.statIcon}>{st.icon}</Text>
+                    <Text style={s.statVal}>{st.val}</Text>
+                    <Text style={s.statLbl}>{st.lbl}</Text>
+                  </View>
+                ))}
+              </View>
+            </LinearGradient>
 
-      {tab === 'users' ? (
-        <FlatList
-          data={users}
-          keyExtractor={u => u.id}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll(); }} colors={[COLORS.primary]} />}
-          contentContainerStyle={{ padding: 16, paddingTop: 8 }}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={<Empty icon="👤" title="No users found" />}
-          renderItem={({ item }) => (
-            <Card style={{ marginBottom: 4 }}>
-              <View style={styles.userRow}>
-                <Avatar uri={item.avatar} name={item.full_name} size={40} />
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={styles.userName}>{item.full_name}</Text>
-                  <Text style={styles.userEmail}>{item.email}</Text>
-                </View>
-                <View style={styles.userBadges}>
+            {/* ── Tabs ── */}
+            <View style={s.tabBar}>
+              {['users', 'bookings'].map(t => (
+                <TouchableOpacity key={t} style={[s.tabBtn, tab === t && s.tabBtnActive]}
+                  onPress={() => setTab(t)}>
+                  <Text style={[s.tabTxt, tab === t && s.tabTxtActive]}>
+                    {t === 'users' ? `Users (${users.length})` : `Bookings (${bookings.length})`}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </>
+        }
+        renderItem={({ item }) => tab === 'users' ? (
+          <View style={{ paddingHorizontal: 16 }}>
+            <View style={[s.userCard, SHADOWS.card]}>
+              <Avatar uri={item.avatar} name={item.full_name} size={44} />
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={TYPE.h4}>{item.full_name}</Text>
+                <Text style={[TYPE.caption, { marginTop: 2 }]}>{item.email}</Text>
+                <View style={{ flexDirection: 'row', gap: 6, marginTop: 6 }}>
                   <Badge label={item.role} />
                   {item.is_verified && <Badge label="verified" />}
                 </View>
               </View>
               {item.role === 'caregiver' && !item.is_verified && (
-                <Button
-                  title="✅ Verify Caregiver"
-                  onPress={() => verifyUser(item.id, item.full_name)}
-                  style={styles.verifyBtn}
-                />
+                <Button title="Verify" onPress={() => verifyUser(item.id, item.full_name)}
+                  style={{ paddingVertical: 8, paddingHorizontal: 12 }} />
               )}
-            </Card>
-          )}
-        />
-      ) : (
-        <FlatList
-          data={bookings}
-          keyExtractor={b => b.id}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchAll(); }} colors={[COLORS.primary]} />}
-          contentContainerStyle={{ padding: 16, paddingTop: 8 }}
-          showsVerticalScrollIndicator={false}
-          ListEmptyComponent={<Empty icon="📅" title="No bookings" />}
-          renderItem={({ item }) => (
-            <Card style={{ marginBottom: 4 }}>
-              <View style={styles.bookingHeader}>
-                <Text style={styles.userName}>{item.patient?.full_name}</Text>
-                <Badge label={item.status} />
+            </View>
+          </View>
+        ) : (
+          <View style={{ paddingHorizontal: 16 }}>
+            <View style={[s.userCard, SHADOWS.card]}>
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 6 }}>
+                  <Text style={TYPE.h4}>{item.patient?.full_name}</Text>
+                  <Badge label={item.status} />
+                </View>
+                <Text style={TYPE.caption}>→ {item.caregiver_name} · {item.care_type}</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
+                  <Text style={{ fontSize: 15, fontWeight: '800', color: C.primary }}>
+                    KES {item.final_amount || item.estimated_amount}
+                  </Text>
+                  <Badge label={item.is_paid ? 'Paid' : 'Unpaid'} />
+                </View>
               </View>
-              <Text style={styles.userEmail}>
-                → {item.caregiver?.user?.full_name} · {item.care_type}
-              </Text>
-              <View style={styles.bookingFooter}>
-                <Text style={styles.amount}>KES {item.total_amount}</Text>
-                <Badge label={item.is_paid ? 'Paid' : 'Unpaid'} />
-              </View>
-            </Card>
-          )}
-        />
-      )}
+            </View>
+          </View>
+        )}
+        ListEmptyComponent={
+          <View style={{ paddingHorizontal: 16 }}>
+            <Empty icon={tab === 'users' ? '👤' : '📅'}
+              title={`No ${tab} found`} />
+          </View>
+        }
+        ListFooterComponent={<View style={{ height: 32 }} />}
+      />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container:     { flex: 1, backgroundColor: COLORS.bg },
-  header:        { paddingHorizontal: 20, paddingTop: 56, paddingBottom: 14, backgroundColor: COLORS.card, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  title:         { fontSize: 22, fontWeight: '800', color: COLORS.text },
-  statsGrid:     { flexDirection: 'row', flexWrap: 'wrap', padding: 12, gap: 8 },
-  statCard:      { width: '47%', alignItems: 'center', paddingVertical: 14, margin: 0 },
-  statIcon:      { fontSize: 24, marginBottom: 4 },
-  statNumber:    { fontSize: 24, fontWeight: '800', color: COLORS.primary },
-  statLabel:     { fontSize: 12, color: COLORS.muted, marginTop: 2 },
-  tabRow:        { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: COLORS.border, backgroundColor: COLORS.card },
-  tab:           { flex: 1, paddingVertical: 13, alignItems: 'center' },
-  tabActive:     { borderBottomWidth: 2.5, borderBottomColor: COLORS.primary },
-  tabText:       { fontSize: 15, fontWeight: '600', color: COLORS.muted },
-  userRow:       { flexDirection: 'row', alignItems: 'center' },
-  userName:      { fontSize: 15, fontWeight: '700', color: COLORS.text },
-  userEmail:     { fontSize: 12, color: COLORS.muted, marginTop: 2 },
-  userBadges:    { gap: 4, alignItems: 'flex-end' },
-  verifyBtn:     { marginTop: 12, paddingVertical: 9 },
-  bookingHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 },
-  bookingFooter: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, paddingTop: 8, borderTopWidth: 1, borderTopColor: COLORS.border },
-  amount:        { fontSize: 16, fontWeight: '700', color: COLORS.primary },
+const s = StyleSheet.create({
+  header:       { paddingTop: 56, paddingBottom: 24, paddingHorizontal: 16 },
+  headerTitle:  { fontSize: 22, fontWeight: '800', color: '#fff' },
+  headerSub:    { fontSize: 13, color: 'rgba(255,255,255,0.75)', marginTop: 4, marginBottom: 20 },
+  statsGrid:    { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
+  statCard:     { width: '30%', backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: RADIUS.md, padding: 10, alignItems: 'center' },
+  statIcon:     { fontSize: 20, marginBottom: 4 },
+  statVal:      { fontSize: 18, fontWeight: '800', color: '#fff' },
+  statLbl:      { fontSize: 10, color: 'rgba(255,255,255,0.7)', marginTop: 2, textAlign: 'center' },
+  tabBar:       { flexDirection: 'row', backgroundColor: C.card, borderBottomWidth: 1, borderBottomColor: C.border },
+  tabBtn:       { flex: 1, paddingVertical: 14, alignItems: 'center' },
+  tabBtnActive: { borderBottomWidth: 2.5, borderBottomColor: C.primary },
+  tabTxt:       { fontSize: 14, fontWeight: '600', color: C.textMuted },
+  tabTxtActive: { color: C.primary },
+  userCard:     { flexDirection: 'row', alignItems: 'center', backgroundColor: C.card, borderRadius: RADIUS.lg, padding: 14, marginBottom: 10 },
 });

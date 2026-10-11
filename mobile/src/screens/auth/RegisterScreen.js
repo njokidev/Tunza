@@ -1,124 +1,425 @@
 import React, { useState } from 'react';
-import {
-  View, Text, StyleSheet, ScrollView,
-  TouchableOpacity, KeyboardAvoidingView, Platform, Alert,
-} from 'react-native';
-import { authApi, BASE_URL } from '../../api';
-import { Button, Input, COLORS } from '../../components/ui';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity,
+  KeyboardAvoidingView, Platform, Alert, StatusBar, 
+  AccessibilityInfo} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { authApi } from '../../api';
+import { Button, Input } from '../../components/ui';
+import { COLORS as C, GRADIENT, RADIUS, SHADOWS } from '../../theme';
 
 const ROLES = [
-  { key: 'patient',   label: '🏥 Patient',   desc: 'I need care services' },
-  { key: 'caregiver', label: '👩‍⚕️ Caregiver', desc: 'I provide care services' },
+  { key:'patient',   emoji:'🏥', title:'I need care',   desc:'Find trusted care for my loved one' },
+  { key:'caregiver', emoji:'👩‍⚕️', title:'I provide care', desc:'Conenct with families who need care' },
 ];
+const INITIAL_FORM = {
+  full_name: '',
+  email: '',
+  phone: '',
+  password: '',
+  password2: '',
+  role: 'patient',
+};
+
+function getErrorMessage(error) {
+  const data = error.response?.data;
+
+  if (typeof data?.detail === 'string') {
+    return data.detail;
+  }
+
+  if (data && typeof data === 'object') {
+    return Object.entries(data)
+      .map(([field, messages]) => {
+        const value = Array.isArray(messages)
+          ? messages.join(', ')
+          : String(messages);
+
+        return `${field.replaceAll('_', ' ')}: ${value}`;
+      })
+      .join('\n');
+  }
+
+  return 'Unable to create your account. Please check your connection and try again.';
+}
+
 
 export default function RegisterScreen({ navigation }) {
-  const [form, setForm] = useState({
-    full_name: '', email: '', phone: '', password: '', password2: '', role: 'patient',
-  });
+  const [form,    setForm]    = useState(INITIAL_FORM);
   const [errors,  setErrors]  = useState({});
   const [loading, setLoading] = useState(false);
 
-  const set = (key, val) => setForm(p => ({ ...p, [key]: val }));
+  const set = (key,value) => {
+    setForm(previous => ({...previous,[key]:value}));
 
-  const validate = () => {
-    const e = {};
-    if (!form.full_name) e.full_name = 'Name is required';
-    if (!form.email)     e.email     = 'Email is required';
-    if (!form.phone)     e.phone     = 'Phone is required';
-    if (form.password.length < 8) e.password = 'Minimum 8 characters';
-    if (form.password !== form.password2) e.password2 = 'Passwords do not match';
-    setErrors(e);
-    return Object.keys(e).length === 0;
+    setErrors(previous =>({
+      ...previous,
+      [key]: undefined,
+    }))
+  }
+
+const validate = () => {
+    const nextErrors = {};
+
+    if (!form.full_name.trim()) {
+      nextErrors.full_name = 'Enter your full name.';
+    }
+
+    const email = form.email.trim().toLowerCase();
+
+    if (!email) {
+      nextErrors.email = 'Enter your email address.';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      nextErrors.email = 'Enter a valid email address.';
+    }
+
+    if (!form.phone.trim()) {
+      nextErrors.phone = 'Enter your phone number.';
+    }
+
+    if (form.password.length < 8) {
+      nextErrors.password = 'Use at least 8 characters.';
+    }
+
+    if (!form.password2) {
+      nextErrors.password2 = 'Confirm your password.';
+    } else if (form.password !== form.password2) {
+      nextErrors.password2 = 'Passwords do not match.';
+    }
+
+    setErrors(nextErrors);
+
+    return Object.keys(nextErrors).length === 0;
   };
 
-  const handleRegister = async () => {
-    if (!validate()) return;
+const handleRegister = async () => {
+    if (loading || !validate()) return;
+
     setLoading(true);
+
     try {
-      await authApi.register(form);
+      await authApi.register({
+        full_name: form.full_name.trim(),
+        email: form.email.trim().toLowerCase(),
+        phone: form.phone.trim(),
+        password: form.password,
+        password2: form.password2,
+        role: form.role,
+      });
+
       Alert.alert(
-        'Account Created! 🎉',
-        'You can now log in with your credentials.',
-        [{ text: 'Login', onPress: () => navigation.replace('Login') }]
+        'Welcome to Tunza 🎉',
+        'Your account has been created. You can now sign in.',
+        [
+          {
+            text: 'Sign In',
+            onPress: () => navigation.replace('Login'),
+          },
+        ],
+        { cancelable: false }
       );
-    } catch (err) {
-      const data = err.response?.data || {};
-      const apiMsg = Object.values(data).flat().join('\n');
-      const msg = apiMsg || (
-        err.response
-          ? 'Registration failed.'
-          : `Cannot reach server at ${BASE_URL}. Check your API URL and backend network access.`
+    } catch (error) {
+      Alert.alert(
+        'Registration failed',
+        getErrorMessage(error)
       );
-      Alert.alert('Error', msg);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: COLORS.bg }}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-    >
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-        <View style={styles.header}>
-          <Text style={styles.brand}>🤝 Tunza</Text>
-          <Text style={styles.title}>Create your account</Text>
-        </View>
+    <KeyboardAvoidingView 
+    style={styles.screen}
+    behavior={Platform.OS==='ios' ? 'padding' : undefined}>
+      <StatusBar barStyle="light-content" />
 
-        {/* Role picker */}
-        <Text style={styles.sectionLabel}>I am a...</Text>
-        <View style={styles.roleRow}>
-          {ROLES.map(r => (
-            <TouchableOpacity
-              key={r.key}
-              style={[styles.roleCard, form.role === r.key && styles.roleCardActive]}
-              onPress={() => set('role', r.key)}
-            >
-              <Text style={styles.roleEmoji}>{r.label.split(' ')[0]}</Text>
-              <Text style={[styles.roleLabel, form.role === r.key && { color: COLORS.primary }]}>
-                {r.label.split(' ').slice(1).join(' ')}
-              </Text>
-              <Text style={styles.roleDesc}>{r.desc}</Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+      <ScrollView
+      style={styles.scroll}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+      >
 
-        <View style={styles.card}>
-          <Input label="Full name"       placeholder="Jane Njoki"          value={form.full_name} onChangeText={v => set('full_name', v)} error={errors.full_name} />
-          <Input label="Email"           placeholder="jane@example.com"    value={form.email}     onChangeText={v => set('email', v)}     error={errors.email}     keyboardType="email-address" autoCapitalize="none" />
-          <Input label="Phone (M-Pesa)"  placeholder="0712345678"          value={form.phone}     onChangeText={v => set('phone', v)}     error={errors.phone}     keyboardType="phone-pad" />
-          <Input label="Password"        placeholder="Min 8 characters"    value={form.password}  onChangeText={v => set('password', v)}  error={errors.password}  secureTextEntry />
-          <Input label="Confirm password" placeholder="Repeat password"    value={form.password2} onChangeText={v => set('password2', v)} error={errors.password2} secureTextEntry />
+        {/* ── Compact gradient header ── */}
+        <LinearGradient
+        colors={GRADIENT.primary}
+        start={{x:0,y:0}}
+        end={{x:1,y:1}} 
+        style={styles.header}>
 
-          <Button title="Create Account" onPress={handleRegister} loading={loading} style={{ marginTop: 8 }} />
-        </View>
-
-        <View style={styles.footer}>
-          <Text style={styles.footerText}>Already have an account? </Text>
-          <TouchableOpacity onPress={() => navigation.navigate('Login')}>
-            <Text style={styles.link}>Sign in</Text>
+          <TouchableOpacity
+          onPress={() => navigation.goBack()} 
+          style={styles.backButton}
+          accessibilityLabel="Go back"
+          >
+            <Text style={styles.backText}>←</Text>
           </TouchableOpacity>
+
+          <Text style={styles.headerTitle}>Join Tunza</Text>
+          <Text style={styles.headerSub}>Trusted Care starts here.</Text>
+        </LinearGradient>
+
+        <View style={styles.body}>
+           <Text style={styles.heading}>Create your account</Text>
+           <Text style={styles.subtitle}>
+            First, tell us how you'll use Tunza.
+          </Text>
+
+           <Text style={styles.roleLabel}>I want to...</Text>
+
+           <View style={styles.roleRow}>
+            {ROLES.map(role => {
+              const selected = form.role === role.key;
+
+              return (
+                <TouchableOpacity
+                  key={role.key}
+                  activeOpacity={0.85}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected }}
+                  onPress={() => set('role', role.key)}
+                  style={[
+                    styles.roleCard,
+                    selected && styles.roleCardActive,
+                  ]}
+                >
+                  <Text style={styles.roleEmoji}>
+                    {role.emoji}
+                  </Text>
+
+                  <Text
+                    style={[
+                      styles.roleTitle,
+                      selected && styles.roleTitleActive,
+                    ]}
+                  >
+                    {role.title}
+                  </Text>
+
+                  <Text style={styles.roleDescription}>
+                    {role.desc}
+                  </Text>
+
+                  {selected && (
+                    <Text style={styles.checkmark}>✓</Text>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <View style={styles.formCard}>
+            <Input
+              label="Full name"
+              placeholder="Jane Njoki"
+              icon="👤"
+              value={form.full_name}
+              onChangeText={value => set('full_name', value)}
+              error={errors.full_name}
+              autoCapitalize="words"
+            />
+            <Input
+              label="Email address"
+              placeholder="jane@example.com"
+              icon="✉"
+              value={form.email}
+              onChangeText={value => set('email', value)}
+              error={errors.email}
+              keyboardType="email-address"
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+             <Input
+              label="Phone number"
+              placeholder="0712 345 678"
+              icon="📱"
+              value={form.phone}
+              onChangeText={value => set('phone', value)}
+              error={errors.phone}
+              keyboardType="phone-pad"
+            />
+            <Input
+              label="Password"
+              placeholder="At least 8 characters"
+              icon="🔒"
+              value={form.password}
+              onChangeText={value => set('password', value)}
+              error={errors.password}
+              secureTextEntry
+            />
+            <Input
+              label="Confirm password"
+              placeholder="Enter your password again"
+              icon="🔒"
+              value={form.password2}
+              onChangeText={value => set('password2', value)}
+              error={errors.password2}
+              secureTextEntry
+            />
+                        <Button
+              title="Create Account"
+              onPress={handleRegister}
+              loading={loading}
+              style={styles.submitButton}
+            />
+          </View>
+                 <View style={styles.footer}>
+            <Text style={styles.footerText}>
+              Already have an account?{' '}
+            </Text>
+
+            <TouchableOpacity
+              onPress={() => navigation.navigate('Login')}
+            >
+              <Text style={styles.signInText}>Sign in</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
   );
 }
 
+
+
+
 const styles = StyleSheet.create({
-  container:      { flexGrow: 1, padding: 24 },
-  header:         { alignItems: 'center', marginBottom: 24, marginTop: 16 },
-  brand:          { fontSize: 28, fontWeight: '800', color: COLORS.primary },
-  title:          { fontSize: 20, fontWeight: '700', color: COLORS.text, marginTop: 4 },
-  sectionLabel:   { fontSize: 14, fontWeight: '600', color: COLORS.muted, marginBottom: 10 },
-  roleRow:        { flexDirection: 'row', gap: 12, marginBottom: 20 },
-  roleCard:       { flex: 1, backgroundColor: COLORS.card, borderRadius: 14, padding: 14, borderWidth: 2, borderColor: COLORS.border, alignItems: 'center' },
-  roleCardActive: { borderColor: COLORS.primary, backgroundColor: '#EFF6FF' },
-  roleEmoji:      { fontSize: 28, marginBottom: 6 },
-  roleLabel:      { fontWeight: '700', fontSize: 15, color: COLORS.text, marginBottom: 2 },
-  roleDesc:       { fontSize: 11, color: COLORS.muted, textAlign: 'center' },
-  card:           { backgroundColor: COLORS.card, borderRadius: 20, padding: 24, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 10, elevation: 4 },
-  footer:         { flexDirection: 'row', justifyContent: 'center', marginTop: 24, marginBottom: 16 },
-  footerText:     { color: COLORS.muted },
-  link:           { color: COLORS.primary, fontWeight: '700' },
+  screen: {
+    flex: 1,
+    backgroundColor: C.bg,
+  },
+  scroll: {
+    flex: 1,
+  },
+  content: {
+    flexGrow: 1,
+  },
+  header: {
+    paddingTop: 56,
+    paddingBottom: 42,
+    paddingHorizontal: 24,
+  },
+  backButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 20,
+  },
+  backText: {
+    color: '#fff',
+    fontSize: 22,
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: '800',
+    color: '#fff',
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+    marginTop: 6,
+  },
+  body: {
+    flex: 1,
+    backgroundColor: C.bg,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    marginTop: -20,
+    paddingHorizontal: 20,
+    paddingTop: 26,
+    paddingBottom: 24,
+  },
+  heading: {
+    fontSize: 24,
+    fontWeight: '800',
+    color: C.text,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: C.textMuted,
+    marginTop: 6,
+    marginBottom: 24,
+  },
+  roleLabel: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: C.text,
+    marginBottom: 12,
+  },
+  roleRow: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 24,
+  },
+  roleCard: {
+    flex: 1,
+    backgroundColor: C.card,
+    borderWidth: 1.5,
+    borderColor: C.border,
+    borderRadius: RADIUS.lg,
+    padding: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 150,
+    position: 'relative',
+  },
+  roleCardActive: {
+    borderColor: C.primary,
+    backgroundColor: C.primaryXLight,
+  },
+  roleEmoji: {
+    fontSize: 28,
+    marginBottom: 8,
+  },
+  roleTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: C.text,
+    textAlign: 'center',
+  },
+  roleTitleActive: {
+    color: C.primary,
+  },
+  roleDescription: {
+    fontSize: 11,
+    color: C.textMuted,
+    textAlign: 'center',
+    marginTop: 6,
+    lineHeight: 16,
+  },
+  checkmark: {
+    position: 'absolute',
+    right: 8,
+    top: 8,
+    color: C.primary,
+    fontWeight: '800',
+  },
+  formCard: {
+    backgroundColor: C.card,
+    borderRadius: RADIUS.lg,
+    padding: 18,
+    ...SHADOWS.card,
+    marginBottom: 20,
+  },
+  submitButton: {
+    marginTop: 8,
+  },
+  footer: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingBottom: 12,
+  },
+  footerText: {
+    color: C.textMuted,
+    fontSize: 14,
+  },
+  signInText: {
+    color: C.primary,
+    fontWeight: '700',
+    fontSize: 14,
+  },
 });

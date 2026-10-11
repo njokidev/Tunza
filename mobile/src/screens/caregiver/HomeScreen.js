@@ -1,70 +1,61 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { View, Text, StyleSheet, FlatList, Switch, Alert, RefreshControl } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Location from 'expo-location';
 import { caregiverApi, bookingApi, locationApi } from '../../api';
-import { Card, Badge, Avatar, Button, COLORS, Empty, LoadingScreen } from '../../components/ui';
+import { Card, Badge, Avatar, Button, StatCard, COLORS, Empty, LoadingScreen } from '../../components/ui';
+import { COLORS as C, GRADIENT, RADIUS, SHADOWS, TYPE, SPACING } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
+import { format } from 'date-fns';
 
 export default function CaregiverHomeScreen({ navigation }) {
   const { user }                         = useAuth();
   const [profile,    setProfile]         = useState(null);
   const [bookings,   setBookings]        = useState([]);
   const [available,  setAvailable]       = useState(true);
-  const [toggling,   setToggling]        = useState(false);
   const [loading,    setLoading]         = useState(true);
   const [refreshing, setRefreshing]      = useState(false);
   const [tracking,   setTracking]        = useState(false);
-  const locationSub                      = React.useRef(null);
+  const locationSub                      = useRef(null);
 
   const fetchData = useCallback(async () => {
     try {
-      const [profileRes, bookingRes] = await Promise.all([
+      const [pRes, bRes] = await Promise.all([
         caregiverApi.myProfile(),
         bookingApi.list(),
       ]);
-      setProfile(profileRes.data);
-      setAvailable(profileRes.data.is_available);
-      setBookings((bookingRes.data.results || bookingRes.data).slice(0, 5));
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
+      setProfile(pRes.data);
+      setAvailable(pRes.data.is_available);
+      setBookings(bRes.data.results || bRes.data);
+    } catch (e) { console.error(e); }
+    finally { setLoading(false); setRefreshing(false); }
   }, []);
 
   useEffect(() => { fetchData(); }, []);
 
-  // Toggle availability
-  const toggleAvailability = async (val) => {
-    setToggling(true);
+  const toggleAvail = async (val) => {
     try {
       await caregiverApi.updateMyProfile({ is_available: val });
       setAvailable(val);
-    } catch {
-      Alert.alert('Error', 'Could not update availability.');
-    } finally {
-      setToggling(false);
-    }
+    } catch { Alert.alert('Error', 'Could not update availability.'); }
   };
 
-  // Start broadcasting GPS for active (ongoing) bookings
   const startTracking = async (bookingId) => {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission denied', 'Location permission is required to share your location.');
+      Alert.alert('Permission Required', 'Location access is needed to share your position with the patient.');
       return;
     }
     setTracking(true);
     locationSub.current = await Location.watchPositionAsync(
       { accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 10 },
-      async (loc) => {
+      async ({ coords }) => {
         try {
           await locationApi.update({
             booking_id: bookingId,
-            latitude:   loc.coords.latitude,
-            longitude:  loc.coords.longitude,
-            accuracy:   loc.coords.accuracy,
+            latitude: coords.latitude,
+            longitude: coords.longitude,
+            accuracy: coords.accuracy,
           });
         } catch { /* silent */ }
       }
@@ -77,112 +68,177 @@ export default function CaregiverHomeScreen({ navigation }) {
   };
 
   const ongoingBooking = bookings.find(b => b.status === 'ongoing');
+  const pendingCount   = bookings.filter(b => b.status === 'pending').length;
+  const doneCount      = bookings.filter(b => b.status === 'completed').length;
 
   if (loading) return <LoadingScreen />;
 
-  return (
-    <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.greeting}>Hello, {user?.full_name?.split(' ')[0]} 👋</Text>
-          <Text style={styles.subGreeting}>Caregiver Dashboard</Text>
-        </View>
-        <View style={styles.availRow}>
-          <Text style={styles.availLabel}>{available ? 'Available' : 'Unavailable'}</Text>
-          <Switch
-            value={available}
-            onValueChange={toggleAvailability}
-            disabled={toggling}
-            trackColor={{ true: COLORS.success, false: COLORS.muted }}
-            thumbColor="#fff"
-          />
-        </View>
-      </View>
+  const firstName = user?.full_name?.split(' ')[0] || 'there';
 
+  return (
+    <View style={{ flex: 1, backgroundColor: C.bg }}>
       <FlatList
-        data={bookings}
+        data={bookings.slice(0, 5)}
         keyExtractor={b => b.id}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); fetchData(); }} colors={[COLORS.primary]} />}
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ padding: 16, gap: 0 }}
+        refreshControl={
+          <RefreshControl refreshing={refreshing}
+            onRefresh={() => { setRefreshing(true); fetchData(); }}
+            colors={[C.primary]} tintColor={C.primary} />
+        }
         ListHeaderComponent={
           <>
-            {/* Stats row */}
-            <View style={styles.statsRow}>
-              <Card style={styles.statCard}>
-                <Text style={styles.statNumber}>{profile?.rating_avg || '—'}</Text>
-                <Text style={styles.statLabel}>⭐ Rating</Text>
-              </Card>
-              <Card style={styles.statCard}>
-                <Text style={styles.statNumber}>{profile?.rating_count || 0}</Text>
-                <Text style={styles.statLabel}>📝 Reviews</Text>
-              </Card>
-              <Card style={styles.statCard}>
-                <Text style={styles.statNumber}>{bookings.filter(b => b.status === 'completed').length}</Text>
-                <Text style={styles.statLabel}>✅ Done</Text>
-              </Card>
+            {/* ── Gradient header ── */}
+            <LinearGradient colors={GRADIENT.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.header}>
+              <View style={s.headerTop}>
+                <View>
+                  <Text style={s.greeting}>Hello, {firstName} 👋</Text>
+                  <Text style={s.subGreeting}>Caregiver Dashboard</Text>
+                </View>
+                <View style={s.availRow}>
+                  <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: '600' }}>
+                    {available ? 'Available' : 'Off Duty'}
+                  </Text>
+                  <Switch
+                    value={available}
+                    onValueChange={toggleAvail}
+                    trackColor={{ true: '#4ADE80', false: 'rgba(255,255,255,0.3)' }}
+                    thumbColor="#fff"
+                    ios_backgroundColor="rgba(255,255,255,0.3)"
+                  />
+                </View>
+              </View>
+
+              {/* ── Stats row inside header ── */}
+              <View style={s.statsRow}>
+                <View style={s.statPill}>
+                  <Text style={s.statNum}>{profile?.rating_avg || '—'}</Text>
+                  <Text style={s.statLbl}>⭐ Rating</Text>
+                </View>
+                <View style={s.statDivider} />
+                <View style={s.statPill}>
+                  <Text style={s.statNum}>{pendingCount}</Text>
+                  <Text style={s.statLbl}>📋 Pending</Text>
+                </View>
+                <View style={s.statDivider} />
+                <View style={s.statPill}>
+                  <Text style={s.statNum}>{doneCount}</Text>
+                  <Text style={s.statLbl}>✅ Done</Text>
+                </View>
+                <View style={s.statDivider} />
+                <View style={s.statPill}>
+                  <Text style={s.statNum}>{profile?.rating_count || 0}</Text>
+                  <Text style={s.statLbl}>📝 Reviews</Text>
+                </View>
+              </View>
+            </LinearGradient>
+
+            <View style={{ padding: 16 }}>
+              {/* ── Active session banner ── */}
+              {ongoingBooking && (
+                <View style={[s.sessionCard, SHADOWS.md]}>
+                  <LinearGradient
+                    colors={tracking ? ['#059669', '#047857'] : GRADIENT.primary}
+                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                    style={s.sessionGrad}
+                  >
+                    <View style={s.sessionDot} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>
+                        Active Session
+                      </Text>
+                      <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 2 }}>
+                        Patient: {ongoingBooking.patient?.full_name}
+                      </Text>
+                    </View>
+                  </LinearGradient>
+                  <View style={s.sessionActions}>
+                    {tracking ? (
+                      <Button title="⏹ Stop Sharing Location" variant="outline"
+                        onPress={stopTracking} style={{ flex: 1 }} />
+                    ) : (
+                      <Button title="📍 Share My Location"
+                        onPress={() => startTracking(ongoingBooking.id)} style={{ flex: 1 }} />
+                    )}
+                  </View>
+                </View>
+              )}
+
+              {/* ── Recent bookings header ── */}
+              <View style={s.sectionRow}>
+                <Text style={TYPE.h3}>Recent Bookings</Text>
+                <Text style={s.seeAll} onPress={() => navigation.navigate('Bookings')}>
+                  See all →
+                </Text>
+              </View>
             </View>
-
-            {/* Live tracking banner */}
-            {ongoingBooking && (
-              <Card style={[styles.trackBanner, tracking && styles.trackBannerActive]}>
-                <Text style={styles.trackTitle}>📍 Active Care Session</Text>
-                <Text style={styles.trackSub}>Patient: {ongoingBooking.patient?.full_name}</Text>
-                {tracking ? (
-                  <Button title="Stop Sharing Location" variant="outline" onPress={stopTracking} style={{ marginTop: 10 }} />
-                ) : (
-                  <Button title="Share My Location" onPress={() => startTracking(ongoingBooking.id)} style={{ marginTop: 10 }} />
-                )}
-              </Card>
-            )}
-
-            <Text style={styles.sectionTitle}>Recent Bookings</Text>
           </>
         }
         renderItem={({ item }) => (
-          <Card style={{ marginBottom: 4 }}>
-            <View style={styles.bookingRow}>
-              <Avatar uri={item.patient?.avatar} name={item.patient?.full_name} size={40} />
-              <View style={{ flex: 1, marginLeft: 12 }}>
-                <Text style={styles.bName}>{item.patient?.full_name}</Text>
-                <Text style={styles.bSub}>{item.care_type} · {new Date(item.start_date).toLocaleDateString()}</Text>
+          <View style={{ paddingHorizontal: 16 }}>
+            <View style={[s.bookingRow, SHADOWS.card]}>
+              <View style={[s.statusBar, {
+                backgroundColor:
+                  item.status === 'pending'   ? C.warning :
+                  item.status === 'ongoing'   ? C.primary :
+                  item.status === 'completed' ? C.success : C.border
+              }]} />
+              <View style={s.bookingBody}>
+                <Avatar uri={item.patient?.avatar} name={item.patient?.full_name} size={40} />
+                <View style={{ flex: 1, marginLeft: 12 }}>
+                  <Text style={TYPE.h4}>{item.patient?.full_name}</Text>
+                  <Text style={[TYPE.caption, { textTransform: 'capitalize', marginTop: 2 }]}>
+                    {item.care_type?.replace('_', ' ')}
+                  </Text>
+                  <Text style={TYPE.micro}>
+                    {format(new Date(item.scheduled_start), 'dd MMM yyyy')}
+                  </Text>
+                </View>
+                <View style={{ alignItems: 'flex-end', gap: 6 }}>
+                  <Badge label={item.status} />
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: C.primary }}>
+                    KES {item.final_amount || item.estimated_amount}
+                  </Text>
+                </View>
               </View>
-              <Badge label={item.status} />
             </View>
-          </Card>
+          </View>
         )}
-        ListEmptyComponent={<Empty icon="📅" title="No bookings yet" subtitle="Once patients book you, they'll appear here" />}
         ListFooterComponent={
-          <Button
-            title="View All Bookings"
-            variant="outline"
-            onPress={() => navigation.navigate('Bookings')}
-            style={{ marginTop: 8 }}
-          />
+          <View style={{ paddingHorizontal: 16, paddingBottom: 32, marginTop: 8 }}>
+            <Button title="View All Bookings" variant="outline"
+              onPress={() => navigation.navigate('Bookings')} />
+          </View>
+        }
+        ListEmptyComponent={
+          <View style={{ paddingHorizontal: 16 }}>
+            <Empty icon="📅" title="No bookings yet"
+              subtitle="Once patients book you, sessions will appear here" />
+          </View>
         }
       />
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container:        { flex: 1, backgroundColor: COLORS.bg },
-  header:           { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingHorizontal: 20, paddingTop: 56, paddingBottom: 16, backgroundColor: COLORS.card, borderBottomWidth: 1, borderBottomColor: COLORS.border },
-  greeting:         { fontSize: 20, fontWeight: '800', color: COLORS.text },
-  subGreeting:      { fontSize: 13, color: COLORS.muted },
-  availRow:         { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  availLabel:       { fontSize: 13, fontWeight: '600', color: COLORS.muted },
-  statsRow:         { flexDirection: 'row', gap: 10, marginBottom: 16 },
-  statCard:         { flex: 1, alignItems: 'center', paddingVertical: 14 },
-  statNumber:       { fontSize: 22, fontWeight: '800', color: COLORS.primary },
-  statLabel:        { fontSize: 11, color: COLORS.muted, marginTop: 4 },
-  trackBanner:      { backgroundColor: '#EFF6FF', borderWidth: 1.5, borderColor: COLORS.primary, marginBottom: 16 },
-  trackBannerActive:{ backgroundColor: '#D1FAE5', borderColor: COLORS.success },
-  trackTitle:       { fontSize: 16, fontWeight: '700', color: COLORS.text },
-  trackSub:         { fontSize: 13, color: COLORS.muted, marginTop: 4 },
-  sectionTitle:     { fontSize: 17, fontWeight: '700', color: COLORS.text, marginBottom: 12 },
-  bookingRow:       { flexDirection: 'row', alignItems: 'center' },
-  bName:            { fontSize: 15, fontWeight: '700', color: COLORS.text },
-  bSub:             { fontSize: 12, color: COLORS.muted, textTransform: 'capitalize', marginTop: 2 },
+const s = StyleSheet.create({
+  header:       { paddingTop: 56, paddingBottom: 28, paddingHorizontal: 20 },
+  headerTop:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
+  greeting:     { fontSize: 20, fontWeight: '800', color: '#fff' },
+  subGreeting:  { fontSize: 12, color: 'rgba(255,255,255,0.75)', marginTop: 2 },
+  availRow:     { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  statsRow:     { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: RADIUS.lg, padding: 14 },
+  statPill:     { flex: 1, alignItems: 'center' },
+  statNum:      { fontSize: 20, fontWeight: '800', color: '#fff' },
+  statLbl:      { fontSize: 10, color: 'rgba(255,255,255,0.75)', marginTop: 3, textAlign: 'center' },
+  statDivider:  { width: 1, backgroundColor: 'rgba(255,255,255,0.25)', marginVertical: 4 },
+  sessionCard:  { borderRadius: RADIUS.lg, overflow: 'hidden', marginHorizontal: 0, marginBottom: 16 },
+  sessionGrad:  { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 },
+  sessionDot:   { width: 10, height: 10, borderRadius: 5, backgroundColor: '#4ADE80', flexShrink: 0 },
+  sessionActions:{ padding: 12, backgroundColor: C.card },
+  sectionRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
+  seeAll:       { fontSize: 13, fontWeight: '600', color: C.primary },
+  bookingRow:   { backgroundColor: C.card, borderRadius: RADIUS.lg, overflow: 'hidden', marginBottom: 10, flexDirection: 'row' },
+  statusBar:    { width: 4 },
+  bookingBody:  { flex: 1, flexDirection: 'row', alignItems: 'center', padding: 14 },
 });

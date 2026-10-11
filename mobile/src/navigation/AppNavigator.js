@@ -1,158 +1,152 @@
-import 'react-native-gesture-handler'; // ← MUST be first import in navigator
+import 'react-native-gesture-handler';
 import React from 'react';
+import { View, Text, ActivityIndicator } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text, ActivityIndicator, View } from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
 
 import { useAuth } from '../context/AuthContext';
-import { COLORS } from '../components/ui';
+import { COLORS as C, GRADIENT } from '../theme';
 
 // Auth
-import LoginScreen     from '../screens/auth/LoginScreen';
-import RegisterScreen  from '../screens/auth/RegisterScreen';
+import LoginScreen    from '../screens/auth/LoginScreen';
+import RegisterScreen from '../screens/auth/RegisterScreen';
 
 // Shared
 import BookingsScreen       from '../screens/BookingsScreen';
 import ChatScreen           from '../screens/ChatScreen';
 import ConversationsScreen  from '../screens/ConversationsScreen';
 import AccountScreen        from '../screens/AccountScreen';
-import NotificationsScreen  from '../screens/NotificationsScreen';
 
 // Patient
-import PatientHomeScreen       from '../screens/patient/HomeScreen';
-import CaregiverDetailScreen   from '../screens/patient/CaregiverDetailScreen';
-import PaymentScreen           from '../screens/patient/PaymentScreen';
-import TrackCaregiverScreen    from '../screens/patient/TrackCaregiverScreen';
-import ReviewScreen            from '../screens/patient/ReviewScreen';
+import PatientHomeScreen      from '../screens/patient/HomeScreen';
+import CaregiverDetailScreen  from '../screens/patient/CaregiverDetailScreen';
+import ConfirmPaymentScreen   from '../screens/patient/ConfirmPaymentScreen';
+import TrackCaregiverScreen   from '../screens/patient/TrackCaregiverScreen';
+import ReviewScreen           from '../screens/patient/ReviewScreen';
 
 // Caregiver
 import CaregiverHomeScreen    from '../screens/caregiver/HomeScreen';
 import CaregiverProfileScreen from '../screens/caregiver/ProfileScreen';
+import EarningsScreen         from '../screens/caregiver/EarningsScreen';
 
 // Admin
 import AdminDashboardScreen from '../screens/admin/DashboardScreen';
 
-const Stack  = createStackNavigator();
-const Tab    = createBottomTabNavigator();
+const Stack = createStackNavigator();
+const Tab   = createBottomTabNavigator();
 
-const TAB_ICONS = {
-  Home:          '🏠', Bookings: '📅',
-  Messages:      '💬', Profile:  '👤',
-  Dashboard:     '📊', 'My Profile': '⚙️',
-};
-
-const tabBarIcon = (name) => ({ focused }) => (
-  <Text style={{ fontSize: 22, opacity: focused ? 1 : 0.5 }}>{TAB_ICONS[name]}</Text>
+// ── Tab icon component ─────────────────────────────────────────────────────────
+const TabIcon = ({ icon, focused }) => (
+  focused
+    ? <LinearGradient colors={GRADIENT.primary} style={{ width:36, height:36, borderRadius:18, alignItems:'center', justifyContent:'center' }}>
+        <Text style={{ fontSize: 18 }}>{icon}</Text>
+      </LinearGradient>
+    : <Text style={{ fontSize: 20, opacity: 0.45 }}>{icon}</Text>
 );
 
-// ── Patient tabs ──────────────────────────────────────────────────────────────
+const tabOptions = (icon) => ({
+  tabBarIcon: ({ focused }) => <TabIcon icon={icon} focused={focused} />,
+});
+
+const sharedTabBarStyle = {
+  headerShown: false,
+  tabBarActiveTintColor:   C.primary,
+  tabBarInactiveTintColor: C.textMuted,
+  tabBarStyle: {
+    borderTopColor:    C.border,
+    paddingBottom:     8,
+    paddingTop:        6,
+    height:            64,
+    backgroundColor:   C.card,
+  },
+  tabBarLabelStyle: { fontSize: 11, fontWeight: '600', marginBottom: 2 },
+};
+
+// ── Patient tab navigator ──────────────────────────────────────────────────────
 function PatientTabs() {
   return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown:    false,
-        tabBarIcon:     tabBarIcon(route.name),
-        tabBarActiveTintColor:   COLORS.primary,
-        tabBarInactiveTintColor: COLORS.muted,
-        tabBarStyle: { borderTopColor: COLORS.border, paddingBottom: 6, height: 60 },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
-      })}
-    >
-      <Tab.Screen name="Home"     component={PatientHomeScreen} />
-      <Tab.Screen name="Bookings" component={BookingsScreen} />
-      <Tab.Screen name="Messages" component={ConversationsScreen} />
-      <Tab.Screen name="Profile"  component={AccountScreen} />
+    <Tab.Navigator screenOptions={sharedTabBarStyle}>
+      <Tab.Screen name="Home"     component={PatientHomeScreen}  options={tabOptions('🏠')} />
+      <Tab.Screen name="Bookings" component={BookingsScreen}     options={tabOptions('📅')} />
+      <Tab.Screen name="Messages" component={ConversationsScreen} options={tabOptions('💬')} />
+      <Tab.Screen name="Account"  component={AccountScreen}      options={tabOptions('👤')} />
     </Tab.Navigator>
   );
 }
 
-// ── Caregiver tabs ────────────────────────────────────────────────────────────
+// ── Caregiver tab navigator ────────────────────────────────────────────────────
 function CaregiverTabs() {
   return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown:    false,
-        tabBarIcon:     tabBarIcon(route.name),
-        tabBarActiveTintColor:   COLORS.primary,
-        tabBarInactiveTintColor: COLORS.muted,
-        tabBarStyle: { borderTopColor: COLORS.border, paddingBottom: 6, height: 60 },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
-      })}
-    >
-      <Tab.Screen name="Home"       component={CaregiverHomeScreen} />
-      <Tab.Screen name="Bookings"   component={BookingsScreen} />
-      <Tab.Screen name="Messages"   component={ConversationsScreen} />
-      <Tab.Screen name="My Profile" component={CaregiverProfileScreen} />
-      <Tab.Screen name="Profile"    component={AccountScreen} />
+    <Tab.Navigator screenOptions={sharedTabBarStyle}>
+      <Tab.Screen name="Home"     component={CaregiverHomeScreen}    options={tabOptions('🏠')} />
+      <Tab.Screen name="Bookings" component={BookingsScreen}         options={tabOptions('📅')} />
+      <Tab.Screen name="Earnings" component={EarningsScreen}         options={tabOptions('💰')} />
+      <Tab.Screen name="Messages" component={ConversationsScreen}    options={tabOptions('💬')} />
+      <Tab.Screen name="Profile"  component={CaregiverProfileScreen} options={tabOptions('⚙️')} />
     </Tab.Navigator>
   );
 }
 
-// ── Admin tabs ────────────────────────────────────────────────────────────────
+// ── Admin tab navigator ────────────────────────────────────────────────────────
 function AdminTabs() {
   return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown:    false,
-        tabBarIcon:     tabBarIcon(route.name),
-        tabBarActiveTintColor:   COLORS.secondary,
-        tabBarInactiveTintColor: COLORS.muted,
-        tabBarStyle: { borderTopColor: COLORS.border, paddingBottom: 6, height: 60 },
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '600' },
-      })}
-    >
-      <Tab.Screen name="Dashboard" component={AdminDashboardScreen} />
-      <Tab.Screen name="Bookings"  component={BookingsScreen} />
-      <Tab.Screen name="Messages"  component={ConversationsScreen} />
-      <Tab.Screen name="Profile"   component={AccountScreen} />
+    <Tab.Navigator screenOptions={{ ...sharedTabBarStyle, tabBarActiveTintColor: C.primaryDark }}>
+      <Tab.Screen name="Dashboard" component={AdminDashboardScreen} options={tabOptions('📊')} />
+      <Tab.Screen name="Bookings"  component={BookingsScreen}       options={tabOptions('📅')} />
+      <Tab.Screen name="Messages"  component={ConversationsScreen}  options={tabOptions('💬')} />
+      <Tab.Screen name="Account"   component={AccountScreen}        options={tabOptions('👤')} />
     </Tab.Navigator>
   );
 }
 
-// ── Root navigator ────────────────────────────────────────────────────────────
+// ── Root navigator ─────────────────────────────────────────────────────────────
 function RootNavigator() {
   const { user, loading } = useAuth();
 
-  if (loading) {
-    return (
-      <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
-  }
+  if (loading) return (
+    <View style={{ flex:1, alignItems:'center', justifyContent:'center', backgroundColor: C.bg }}>
+      <LinearGradient colors={GRADIENT.primary} style={{ width:64, height:64, borderRadius:32, alignItems:'center', justifyContent:'center', marginBottom:16 }}>
+        <Text style={{ fontSize:28 }}>🤝</Text>
+      </LinearGradient>
+      <ActivityIndicator color={C.primary} />
+    </View>
+  );
+
+  const headerStyle = {
+    headerStyle:      { backgroundColor: C.primary, elevation: 0, shadowOpacity: 0 },
+    headerTintColor:  '#fff',
+    headerTitleStyle: { fontWeight: '700', fontSize: 17 },
+    headerBackTitleVisible: false,
+  };
 
   return (
     <Stack.Navigator screenOptions={{ headerShown: false }}>
       {!user ? (
-        // Auth screens
         <>
           <Stack.Screen name="Login"    component={LoginScreen} />
           <Stack.Screen name="Register" component={RegisterScreen} />
         </>
       ) : user.role === 'patient' ? (
-        // Patient flow
         <>
-          <Stack.Screen name="PatientTabs"      component={PatientTabs} />
-          <Stack.Screen name="CaregiverDetail"  component={CaregiverDetailScreen} options={{ headerShown: true, title: 'Caregiver Profile' }} />
-          <Stack.Screen name="Payment"          component={PaymentScreen}          options={{ headerShown: true, title: 'Payment' }} />
-          <Stack.Screen name="TrackCaregiver"   component={TrackCaregiverScreen}   options={{ headerShown: true, title: 'Track Caregiver' }} />
-          <Stack.Screen name="Review"           component={ReviewScreen}           options={{ headerShown: true, title: 'Leave Review' }} />
-          <Stack.Screen name="Chat"             component={ChatScreen}             options={{ headerShown: true }} />
-          <Stack.Screen name="Notifications"    component={NotificationsScreen}    options={{ headerShown: true, title: 'Notifications' }} />
+          <Stack.Screen name="PatientTabs"     component={PatientTabs} />
+          <Stack.Screen name="CaregiverDetail" component={CaregiverDetailScreen}  options={{ headerShown:true, title:'Caregiver Profile', ...headerStyle }} />
+          <Stack.Screen name="ConfirmPayment"  component={ConfirmPaymentScreen}   options={{ headerShown:true, title:'Confirm Payment',   ...headerStyle }} />
+          <Stack.Screen name="TrackCaregiver"  component={TrackCaregiverScreen}   options={{ headerShown:true, title:'Live Location',      ...headerStyle }} />
+          <Stack.Screen name="Review"          component={ReviewScreen}           options={{ headerShown:false }} />
+          <Stack.Screen name="Chat"            component={ChatScreen}             options={{ headerShown:true, ...headerStyle }} />
+          <Stack.Screen name="Notifications"   component={AccountScreen}          options={{ headerShown:true, title:'Notifications',      ...headerStyle }} />
         </>
       ) : user.role === 'caregiver' ? (
-        // Caregiver flow
         <>
           <Stack.Screen name="CaregiverTabs" component={CaregiverTabs} />
-          <Stack.Screen name="Chat"          component={ChatScreen}    options={{ headerShown: true }} />
-          <Stack.Screen name="Bookings"      component={BookingsScreen} />
+          <Stack.Screen name="Chat"          component={ChatScreen}    options={{ headerShown:true, ...headerStyle }} />
         </>
       ) : (
-        // Admin flow
         <>
           <Stack.Screen name="AdminTabs" component={AdminTabs} />
-          <Stack.Screen name="Chat"      component={ChatScreen} options={{ headerShown: true }} />
+          <Stack.Screen name="Chat"      component={ChatScreen} options={{ headerShown:true, ...headerStyle }} />
         </>
       )}
     </Stack.Navigator>

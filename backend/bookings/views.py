@@ -4,6 +4,7 @@ from rest_framework.response import Response
 from accounts.models import Notification
 from accounts.permissions import IsPatient, IsCaregiver, IsAdmin
 from .models import Booking
+from payments.models import Payment
 from .serializers import BookingSerializer, BookingStatusSerializer
 
 
@@ -68,6 +69,31 @@ class UpdateBookingStatusView(APIView):
         booking.status = new_status
         booking.notes  = request.data.get('notes', booking.notes)
         booking.save()
+        if new_status == Booking.Status.COMPLETED and user.role == 'caregiver':
+            # Mark booking as paid
+            booking.is_paid = True
+            booking.save(update_fields=['is_paid'])
+            # Create payment record
+            payment, created = Payment.objects.get_or_create(
+                booking=booking,
+                defaults={
+                    'user': booking.patient,
+                    'phone': booking.patient.phone,
+                    'amount': booking.total_amount,
+                    'status': Payment.Status.SUCCESS,
+                }
+            )
+            # Ensure status is SUCCESS
+            if not created:
+                payment.status = Payment.Status.SUCCESS
+                payment.save(update_fields=['status'])
+            # Notify caregiver of payment
+            Notification.objects.create(
+                user=booking.caregiver.user,
+                title='Payment Received',
+                body=f'You have been paid KES {booking.total_amount} for booking {booking.id}.',
+                type='payment',
+            )
 
         # notify the other party
         if user.role == 'caregiver':

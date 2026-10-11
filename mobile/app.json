@@ -30,7 +30,8 @@
           "locationAlwaysAndWhenInUsePermission": "Tunza uses location to track active care sessions."
         }
       ],
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-status-bar"
     ]
   }
 }
