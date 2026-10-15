@@ -178,9 +178,9 @@ export default function BookingsScreen({ navigation }) {
 const s = StyleSheet.create({
   header:      { paddingTop:16, paddingBottom:20, paddingHorizontal:20 },
   headerTitle: { fontSize:22, fontWeight:'800', color:'#fff' },
-  tabScroll:   { flecGrow:0, flexShrink:0},
+  tabScroll:   { flexGrow:0, flexShrink:0},
   tabRow:      { paddingHorizontal:16, paddingVertical:10, gap:8, alignItems:'center'},
-  tab:         { alignSelf: 'flex-start', flexGrow:0, flexShrik:0, paddingHorizontal:16, paddingVertical:8, borderRadius:RADIUS.pill, backgroundColor:C.card, borderWidth:1.5, borderColor:C.border },
+  tab:         { alignSelf: 'flex-start', flexGrow:0, flexShrink:0, paddingHorizontal:16, paddingVertical:8, borderRadius:RADIUS.pill, backgroundColor:C.card, borderWidth:1.5, borderColor:C.border },
   tabActive:   { backgroundColor:C.primary, borderColor:C.primary },
   tabTxt:      { fontSize:12, fontWeight:'600', color:C.textMuted },
   tabTxtActive:{ color:'#fff' },
