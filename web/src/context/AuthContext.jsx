@@ -1,6 +1,6 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { tokens, setSessionExpiredHandler } from '../api/client';
+import { tokens, setSessionExpiredHandler, setForbiddenHandler, ACCESS_STORAGE_KEY } from '../api/client';
 import { authApi } from '../api/endpoints';
 
 const AuthContext = createContext(null);
@@ -19,6 +19,29 @@ export function AuthProvider({ children }) {
       navigate('/login', { replace: true, state: { expired: true } });
     });
   }, [navigate]);
+
+  // Tokens live in localStorage, which every tab shares. When another tab logs in as
+  // someone else (or logs out), this tab must follow, or it keeps showing the old
+  // role's screens while sending the new account's token (403s everywhere).
+  const syncing = useRef(null);
+  const resync = useCallback(() => {
+    if (syncing.current) return syncing.current;
+    syncing.current = (async () => {
+      if (!tokens.access && !tokens.refresh) { setUser(null); navigate('/login', { replace: true }); return; }
+      try {
+        const { data } = await authApi.me();
+        setUser((prev) => (prev && prev.id === data.id && prev.role === data.role ? prev : data));
+      } catch { /* the 401 handler takes over */ }
+    })().finally(() => { setTimeout(() => { syncing.current = null; }, 2000); });
+    return syncing.current;
+  }, [navigate]);
+
+  useEffect(() => {
+    setForbiddenHandler(resync);
+    const onStorage = (e) => { if (e.key === ACCESS_STORAGE_KEY || e.key === null) resync(); };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, [resync]);
 
   // Restore the session from stored tokens on first load.
   useEffect(() => {

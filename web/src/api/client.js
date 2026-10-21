@@ -24,6 +24,13 @@ export const api = axios.create({ baseURL: API_URL, timeout: 20000 });
 let onSessionExpired = () => {};
 export const setSessionExpiredHandler = (fn) => { onSessionExpired = fn; };
 
+// AuthContext registers this so a 403 re-checks who is signed in (another tab may have
+// logged in as someone else, replacing the shared tokens).
+let onForbidden = () => {};
+export const setForbiddenHandler = (fn) => { onForbidden = fn; };
+
+export const ACCESS_STORAGE_KEY = 'tunza.access';
+
 api.interceptors.request.use((config) => {
   const access = tokens.access;
   if (access) config.headers.Authorization = `Bearer ${access}`;
@@ -52,6 +59,7 @@ api.interceptors.response.use(
     const url = original.url || '';
     const isAuthCall = url.includes('/auth/login') || url.includes('/auth/logout') || url.includes('/auth/register') || url.includes('/auth/token/refresh');
 
+    if (status === 403 && !isAuthCall) onForbidden();
     if (status !== 401 || isAuthCall) return Promise.reject(error);
 
     if (original._retry || !tokens.refresh) {
