@@ -1,10 +1,19 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Platform, Linking } from 'react-native';
 import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { LinearGradient } from 'expo-linear-gradient';
 import { locationApi } from '../../api';
 import { Card, COLORS } from '../../components/ui';
 import { COLORS as C, GRADIENT, RADIUS, SHADOWS, TYPE } from '../../theme';
+
+// On Android, Google Maps crashes the app if no API key was built in. The APK
+// build sets EXPO_PUBLIC_MAPS_ENABLED=true only when a key is provided; without
+// one we show a plain background and an "Open in Google Maps" button instead.
+const MAPS_ENABLED = Platform.OS !== 'android' || process.env.EXPO_PUBLIC_MAPS_ENABLED === 'true';
+
+const openInMaps = ({ latitude, longitude }) => {
+  Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`);
+};
 
 export default function TrackCaregiverScreen({ route, navigation }) {
   const { bookingId }           = route.params;
@@ -41,6 +50,7 @@ export default function TrackCaregiverScreen({ route, navigation }) {
   return (
     <View style={{ flex: 1 }}>
       {/* Map fills screen */}
+      {MAPS_ENABLED ? (
       <MapView
         ref={mapRef}
         provider={PROVIDER_GOOGLE}
@@ -62,6 +72,14 @@ export default function TrackCaregiverScreen({ route, navigation }) {
           </Marker>
         )}
       </MapView>
+      ) : (
+        <LinearGradient colors={['#F5F3FF', '#EDE9FE']} style={[StyleSheet.absoluteFill, s.noMap]}>
+          <Text style={{ fontSize: 48 }}>🗺️</Text>
+          <Text style={[TYPE.body, { color: C.textMuted, marginTop: 8, textAlign: 'center', paddingHorizontal: 32 }]}>
+            Live map coming soon. Tap the card below to see your caregiver in Google Maps.
+          </Text>
+        </LinearGradient>
+      )}
 
       {/* Back button */}
       <TouchableOpacity style={s.backBtn} onPress={() => navigation.goBack()}>
@@ -81,7 +99,7 @@ export default function TrackCaregiverScreen({ route, navigation }) {
             <Text style={[TYPE.body, { flex: 1, marginLeft: 12, color: C.textMuted }]}>{error}</Text>
           </Card>
         ) : location ? (
-          <View style={[s.liveCard, SHADOWS.lg]}>
+          <TouchableOpacity activeOpacity={0.85} onPress={() => openInMaps(location)} style={[s.liveCard, SHADOWS.lg]}>
             <LinearGradient colors={GRADIENT.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.liveGrad}>
               <View style={s.liveDot} />
               <View style={{ flex: 1 }}>
@@ -98,7 +116,7 @@ export default function TrackCaregiverScreen({ route, navigation }) {
                 </Text>
               )}
             </LinearGradient>
-          </View>
+          </TouchableOpacity>
         ) : null}
       </View>
     </View>
@@ -114,5 +132,6 @@ const s = StyleSheet.create({
   pinTail:   { width: 0, height: 0, borderLeftWidth: 6, borderRightWidth: 6, borderTopWidth: 10, borderLeftColor: 'transparent', borderRightColor: 'transparent', borderTopColor: C.primaryDark, marginTop: -2 },
   liveCard:  { borderRadius: RADIUS.lg, overflow: 'hidden' },
   liveGrad:  { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 },
+  noMap:     { alignItems: 'center', justifyContent: 'center' },
   liveDot:   { width: 10, height: 10, borderRadius: 5, backgroundColor: '#4ADE80', flexShrink: 0 },
 });

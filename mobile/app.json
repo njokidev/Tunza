@@ -12,8 +12,8 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.tunza.app",
       "infoPlist": {
-        "NSLocationWhenInUseUsageDescription": "Tunza needs your location to show caregivers near you and track active care sessions.",
-        "NSLocationAlwaysUsageDescription": "Tunza uses your location during active care sessions to keep patients updated."
+        "NSLocationWhenInUseUsageDescription": "Tunza uses your location to show nearby caregivers and track active care sessions.",
+        "NSLocationAlwaysUsageDescription": "Tunza uses your location during active care sessions."
       }
     },
     "android": {

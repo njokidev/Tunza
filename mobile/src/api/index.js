@@ -1,8 +1,9 @@
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 
-const RAW_API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://127.0.0.1:8000/api';
-export const BASE_URL = RAW_API_URL.replace(/\/$/, '');
+// ── Set EXPO_PUBLIC_API_URL in mobile/.env to your machine's LAN IP when testing
+//    on a phone (e.g. http://192.168.0.104:8000/api). Falls back to localhost.
+export const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://127.0.0.1:8000/api';
 
 const api = axios.create({
   baseURL: BASE_URL,
@@ -69,6 +70,21 @@ api.interceptors.response.use(
 
 export default api;
 
+/**
+ * Walk a paginated list with ?page=N. Resolves to { data: [...] } so callers can
+ * treat paginated and plain-array endpoints the same way.
+ */
+async function allPages(url, params = {}, maxPages = 10) {
+  const out = [];
+  for (let page = 1; page <= maxPages; page += 1) {
+    const { data } = await api.get(url, { params: { ...params, page } });
+    if (Array.isArray(data)) return { data };
+    out.push(...(data.results ?? []));
+    if (!data.next) break;
+  }
+  return { data: out };
+}
+
 // ── Auth ──────────────────────────────────────────────────────────────────────
 export const authApi = {
   register: (data)  => api.post('/auth/register/', data),
@@ -86,6 +102,8 @@ export const caregiverApi = {
   detail:           (id)     => api.get(`/caregivers/${id}/`),
   myProfile:        ()       => api.get('/caregivers/me/'),
   updateMyProfile:  (data)   => api.patch('/caregivers/me/', data),
+  me:               ()       => api.get('/caregivers/me/'),
+  updateMe:         (data)   => api.patch('/caregivers/me/', data),
   specializations:  ()       => api.get('/caregivers/specializations/'),
   availability:     ()       => api.get('/caregivers/availability/'),
   addAvailability:  (data)   => api.post('/caregivers/availability/', data),
@@ -94,10 +112,12 @@ export const caregiverApi = {
 
 // ── Bookings ──────────────────────────────────────────────────────────────────
 export const bookingApi = {
-  list:         ()          => api.get('/bookings/'),
+  list:         ()          => allPages('/bookings/'),
   create:       (data)      => api.post('/bookings/', data),
   detail:       (id)        => api.get(`/bookings/${id}/`),
   updateStatus: (id, data)  => api.patch(`/bookings/${id}/status/`, data),
+  // caregiver: accepted | rejected | ongoing | completed — patient: cancelled
+  setStatus:    (id, status) => api.patch(`/bookings/${id}/status/`, { status }),
 };
 
 // ── Messaging ─────────────────────────────────────────────────────────────────
@@ -124,4 +144,19 @@ export const paymentApi = {
 export const locationApi = {
   update: (data)      => api.post('/locations/update/', data),
   get:    (bookingId) => api.get(`/locations/booking/${bookingId}/`),
+};
+
+// ── Care Requests ─────────────────────────────────────────────────────────────
+export const careRequestApi = {
+  create:        (d)         => api.post('/care-requests/', d),
+  mine:          ()          => allPages('/care-requests/mine/'),
+  openRequests:  ()          => api.get('/care-requests/open/'),
+  open:          ()          => api.get('/care-requests/open/'),
+  matches:       (id)        => api.get(`/care-requests/${id}/matches/`),
+  shortlist:     (id, mid)   => api.patch(`/care-requests/${id}/matches/${mid}/shortlist/`),
+  bookFromMatch: (id, mid)   => api.post(`/care-requests/${id}/matches/${mid}/book/`),
+  apply:         (id, d)     => api.post(`/care-requests/${id}/apply/`, d),
+  applications:  (id)        => api.get(`/care-requests/${id}/applications/`),
+  acceptApp:     (id, aid)   => api.post(`/care-requests/${id}/applications/${aid}/accept/`),
+  rejectApp:     (id, aid)   => api.post(`/care-requests/${id}/applications/${aid}/reject/`),
 };

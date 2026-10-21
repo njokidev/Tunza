@@ -9,18 +9,21 @@ import { COLORS as C, GRADIENT, RADIUS, SHADOWS, TYPE } from '../../theme';
 export default function AdminDashboardScreen({ navigation }) {
   const [users,      setUsers]      = useState([]);
   const [bookings,   setBookings]   = useState([]);
+  const [server,     setServer]     = useState(null);   // totals from /auth/admin/stats/
   const [tab,        setTab]        = useState('users');
   const [loading,    setLoading]    = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const fetchAll = useCallback(async () => {
     try {
-      const [uRes, bRes] = await Promise.all([
+      const [uRes, bRes, sRes] = await Promise.all([
         api.get('/auth/users/'),
         api.get('/bookings/admin/all/'),
+        api.get('/auth/admin/stats/'),
       ]);
       setUsers(uRes.data.results   || uRes.data);
       setBookings(bRes.data.results || bRes.data);
+      setServer(sRes.data);
     } catch (e) { console.error(e); }
     finally { setLoading(false); setRefreshing(false); }
   }, []);
@@ -37,13 +40,15 @@ export default function AdminDashboardScreen({ navigation }) {
     ]);
   };
 
+  // Totals come from the server so they count every record, not just the first page of the lists
   const stats = {
-    patients:   users.filter(u => u.role === 'patient').length,
-    caregivers: users.filter(u => u.role === 'caregiver').length,
-    verified:   users.filter(u => u.is_verified).length,
-    pending:    bookings.filter(b => b.status === 'pending').length,
-    completed:  bookings.filter(b => b.status === 'completed').length,
-    revenue:    bookings.filter(b => b.is_paid).reduce((s, b) => s + parseFloat(b.final_amount || 0), 0),
+    patients:   server?.users.patients ?? 0,
+    caregivers: server?.users.caregivers ?? 0,
+    verified:   server?.users.caregivers_verified ?? 0,
+    bookings:   server?.bookings.total ?? 0,
+    pending:    server?.bookings.by_status.pending ?? 0,
+    completed:  server?.bookings.by_status.completed ?? 0,
+    revenue:    Number(server?.money.gmv ?? 0),
   };
 
   if (loading) return <LoadingScreen />;
@@ -72,8 +77,8 @@ export default function AdminDashboardScreen({ navigation }) {
                 {[
                   { icon:'🏥', val: stats.patients,   lbl:'Patients' },
                   { icon:'👩‍⚕️', val: stats.caregivers, lbl:'Caregivers' },
-                  { icon:'✅', val: stats.verified,   lbl:'Verified' },
-                  { icon:'📅', val: bookings.length,  lbl:'Bookings' },
+                  { icon:'✅', val: stats.verified,   lbl:'Verified carers' },
+                  { icon:'📅', val: stats.bookings,  lbl:'Bookings' },
                   { icon:'✔', val: stats.completed,   lbl:'Completed' },
                   { icon:'💰', val:`${stats.revenue.toLocaleString()}`, lbl:'KES Paid' },
                 ].map((st, i) => (
@@ -92,7 +97,7 @@ export default function AdminDashboardScreen({ navigation }) {
                 <TouchableOpacity key={t} style={[s.tabBtn, tab === t && s.tabBtnActive]}
                   onPress={() => setTab(t)}>
                   <Text style={[s.tabTxt, tab === t && s.tabTxtActive]}>
-                    {t === 'users' ? `Users (${users.length})` : `Bookings (${bookings.length})`}
+                    {t === 'users' ? `Users (${stats.patients + stats.caregivers})` : `Bookings (${stats.bookings})`}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -125,10 +130,10 @@ export default function AdminDashboardScreen({ navigation }) {
                   <Text style={TYPE.h4}>{item.patient?.full_name}</Text>
                   <Badge label={item.status} />
                 </View>
-                <Text style={TYPE.caption}>→ {item.caregiver_name} · {item.care_type}</Text>
+                <Text style={TYPE.caption}>→ {item.caregiver?.user?.full_name} · {item.care_type}</Text>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 10 }}>
                   <Text style={{ fontSize: 15, fontWeight: '800', color: C.primary }}>
-                    KES {item.final_amount || item.estimated_amount}
+                    KES {Number(item.total_amount || 0).toLocaleString()}
                   </Text>
                   <Badge label={item.is_paid ? 'Paid' : 'Unpaid'} />
                 </View>

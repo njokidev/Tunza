@@ -8,6 +8,11 @@ SECRET_KEY = config('SECRET_KEY', default='dev-secret-key-change-me')
 DEBUG = config('DEBUG', default=True, cast=bool)
 ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='*').split(',')
 
+# Render sets this automatically for every web service
+RENDER_EXTERNAL_HOSTNAME = config('RENDER_EXTERNAL_HOSTNAME', default='')
+if RENDER_EXTERNAL_HOSTNAME:
+    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME)
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -29,11 +34,13 @@ INSTALLED_APPS = [
     'ratings',
     'payments',
     'locations',
+    'care_requests',
 ]
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -61,9 +68,15 @@ TEMPLATES = [{
 WSGI_APPLICATION = 'tunza.wsgi.application'
 
 # ── Database ──────────────────────────────────────────────────────────────────
+# In production (Render) a single DATABASE_URL is provided; locally the DB_*
+# variables below are used as before.
+DATABASE_URL = config('DATABASE_URL', default='')
 DB_ENGINE = config('DB_ENGINE', default='django.db.backends.sqlite3')
 
-if DB_ENGINE == 'django.db.backends.sqlite3':
+if DATABASE_URL:
+    import dj_database_url
+    DATABASES = {'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)}
+elif DB_ENGINE == 'django.db.backends.sqlite3':
     DATABASES = {
         'default': {
             'ENGINE': DB_ENGINE,
@@ -89,13 +102,6 @@ AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
 ]
 
-
-# ALLOWED_HOSTS = ['localhost', '127.0.0.1', 'kubernetes.docker.internal']
-ALLOWED_HOSTS = [
-    "localhost",
-    "127.0.0.1",
-    "192.168.0.104",
-]
 AUTH_USER_MODEL = 'accounts.User'
 
 LANGUAGE_CODE = 'en-us'
@@ -104,6 +110,11 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = '/static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
+STORAGES = {
+    'default': {'BACKEND': 'django.core.files.storage.FileSystemStorage'},
+    'staticfiles': {'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage'},
+}
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
@@ -147,6 +158,18 @@ CORS_ALLOWED_ORIGINS = config(
     default='http://localhost:8081,http://localhost:19006'
 ).split(',')
 CORS_ALLOW_CREDENTIALS = True
+CSRF_TRUSTED_ORIGINS = [o for o in config('CSRF_TRUSTED_ORIGINS', default='').split(',') if o]
+if RENDER_EXTERNAL_HOSTNAME:
+    CSRF_TRUSTED_ORIGINS.append(f'https://{RENDER_EXTERNAL_HOSTNAME}')
+
+# ── Production security (only when DEBUG is off) ─────────────────────────────
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_HSTS_SECONDS = 3600
 
 # ── M-Pesa ────────────────────────────────────────────────────────────────────
 MPESA_CONSUMER_KEY = config('MPESA_CONSUMER_KEY', default='')

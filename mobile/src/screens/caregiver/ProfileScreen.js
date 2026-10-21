@@ -1,570 +1,267 @@
-
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  Switch,
-  Alert,
-  TouchableOpacity,
+  View, Text, StyleSheet, ScrollView, Switch, Alert, TouchableOpacity, KeyboardAvoidingView, Platform,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
+import { authApi, caregiverApi } from '../../api';
+import { useAuth } from '../../context/AuthContext';
+import { Avatar, Badge, Button, Card, Chip, Input, LoadingScreen, Notice, ScreenHeader } from '../../components/ui';
+import { AreaPicker, TimeChips } from '../../components/pickers';
+import { COLORS as C, RADIUS, SHADOWS, TYPE } from '../../theme';
+import { DAYS, DAYS_LONG } from '../../lib/constants';
+import { errorMessage, fmtShortTime, unwrap } from '../../lib/format';
 
-import { caregiverApi } from '../../api';
-import { Input, Button, Card, LoadingScreen } from '../../components/ui';
-import {
-  COLORS as C,
-  GRADIENT,
-  RADIUS,
-  TYPE,
-} from '../../theme';
+const levelFor = (years) => (years >= 5 ? 'senior' : years >= 2 ? 'mid' : 'junior');
 
-const EXP = [
-  { key: 'junior', label: 'Junior', sub: '0–2 yrs' },
-  { key: 'mid', label: 'Mid', sub: '2–5 yrs' },
-  { key: 'senior', label: 'Senior', sub: '5+ yrs' },
-];
-
-const INITIAL_FORM = {
-  bio: '',
-  hourly_rate: '',
-  years_exp: '',
-  experience: 'junior',
-  location_name: '',
-  is_available: true,
-  specialization_ids: [],
-};
-
-const getList = (response) => {
-  const data = response?.data;
-
-  if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.results)) return data.results;
-
-  return [];
-};
-
-const getErrorMessage = (error) => {
-  const data = error?.response?.data;
-
-  if (!data) {
-    return 'Could not complete the request. Check your connection and try again.';
-  }
-
-  if (typeof data.detail === 'string') {
-    return data.detail;
-  }
-
-  if (typeof data === 'string') {
-    return data;
-  }
-
-  if (typeof data === 'object') {
-    return Object.entries(data)
-      .map(([field, messages]) => {
-        const message = Array.isArray(messages)
-          ? messages.join(', ')
-          : typeof messages === 'string'
-            ? messages
-            : JSON.stringify(messages);
-
-        return `${field.replaceAll('_', ' ')}: ${message}`;
-      })
-      .join('\n');
-  }
-
-  return 'Something went wrong. Please try again.';
-};
-
-const normalizeSpecializationIds = (profile) => {
-  const values =
-    profile?.specializations ??
-    profile?.specialization_ids ??
-    [];
-
-  if (!Array.isArray(values)) return [];
-
-  return values.map((item) =>
-    typeof item === 'object' && item !== null
-      ? item.id
-      : item
-  ).filter((id) => id !== null && id !== undefined);
-};
-
-export default function CaregiverProfileScreen() {
-  const [form, setForm] = useState(INITIAL_FORM);
+/** Caregiver profile editor (web: caregiver/ProfileEditor.jsx) — what families see. */
+export default function CaregiverProfileScreen({ navigation }) {
+  const { user, updateUser, logout } = useAuth();
+  const [form, setForm] = useState(null);
+  const [account, setAccount] = useState({ full_name: user?.full_name ?? '', phone: user?.phone ?? '' });
   const [specs, setSpecs] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [slots, setSlots] = useState([]);
   const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState({ kind: '', text: '' });
 
-  const set = useCallback((key, value) => {
-    setForm((previous) => ({
-      ...previous,
-      [key]: value,
-    }));
-  }, []);
-
-  const loadProfile = useCallback(async () => {
-    setLoading(true);
-
+  const load = useCallback(async () => {
     try {
-      const [profileResult, specsResult] = await Promise.allSettled([
-        caregiverApi.myProfile(),
-        caregiverApi.specializations(),
-      ]);
-
-      if (specsResult.status === 'fulfilled') {
-        setSpecs(getList(specsResult.value));
-      } else {
-        setSpecs([]);
-        console.warn(
-          'Could not load specializations:',
-          specsResult.reason
-        );
-      }
-
-      if (profileResult.status === 'rejected') {
-        throw profileResult.reason;
-      }
-
-      const profile = profileResult.value?.data ?? {};
-
+      const [p, sp, av] = await Promise.all([caregiverApi.me(), caregiverApi.specializations(), caregiverApi.availability()]);
+      const prof = p.data;
+      setSpecs(unwrap(sp.data));
+      setSlots(unwrap(av.data).sort((a, b) => a.day - b.day));
       setForm({
-        bio: profile.bio ?? '',
-        hourly_rate:
-          profile.hourly_rate != null
-            ? String(profile.hourly_rate)
-            : '',
-        years_exp:
-          profile.years_exp != null
-            ? String(profile.years_exp)
-            : '',
-        experience: profile.experience ?? 'junior',
-        location_name: profile.location_name ?? '',
-        is_available: profile.is_available ?? true,
-        specialization_ids: normalizeSpecializationIds(profile),
+        bio: prof.bio ?? '',
+        years_exp: String(prof.years_exp ?? 0),
+        hourly_rate: String(Math.round(Number(prof.hourly_rate ?? 500))),
+        is_available: prof.is_available ?? true,
+        id_number: '',
+        location_name: prof.location_name ?? '',
+        latitude: prof.latitude,
+        longitude: prof.longitude,
+        specialization_ids: (prof.specializations ?? []).map((s) => s.id),
       });
-    } catch (error) {
-      console.error('Profile loading failed:', error);
-
-      Alert.alert(
-        'Could not load profile',
-        getErrorMessage(error),
-        [
-          { text: 'Retry', onPress: loadProfile },
-          { text: 'Cancel', style: 'cancel' },
-        ]
-      );
-    } finally {
-      setLoading(false);
+    } catch (e) {
+      setStatus({ kind: 'error', text: errorMessage(e) });
     }
   }, []);
 
-  useEffect(() => {
-    loadProfile();
-  }, [loadProfile]);
+  useEffect(() => { load(); }, [load]);
 
-  const toggleSpec = useCallback((id) => {
-    setForm((previous) => {
-      const current = previous.specialization_ids ?? [];
+  if (!form) {
+    return status.text ? (
+      <View style={{ flex: 1, backgroundColor: C.bg }}>
+        <ScreenHeader title="Profile" />
+        <View style={{ paddingHorizontal: 20 }}><Notice>{status.text}</Notice>
+          <Button title="Try again" style={{ marginTop: 12 }} onPress={load} /></View>
+      </View>
+    ) : <LoadingScreen />;
+  }
 
-      const alreadySelected = current.some(
-        (selectedId) => String(selectedId) === String(id)
-      );
-
-      return {
-        ...previous,
-        specialization_ids: alreadySelected
-          ? current.filter(
-              (selectedId) => String(selectedId) !== String(id)
-            )
-          : [...current, id],
-      };
-    });
-  }, []);
-
-  const validateForm = () => {
-    const rateText = String(form.hourly_rate).trim();
-    const yearsText = String(form.years_exp).trim();
-
-    if (!rateText) {
-      return 'Please enter your hourly rate in KES.';
-    }
-
-    const rate = Number(rateText);
-
-    if (!Number.isFinite(rate) || rate <= 0) {
-      return 'Hourly rate must be a valid number greater than zero.';
-    }
-
-    if (!yearsText) {
-      return 'Please enter your years of experience.';
-    }
-
-    const years = Number(yearsText);
-
-    if (
-      !Number.isInteger(years) ||
-      years < 0 ||
-      years > 100
-    ) {
-      return 'Years of experience must be a whole number between 0 and 100.';
-    }
-
-    if (!form.location_name.trim()) {
-      return 'Please enter your service location.';
-    }
-
-    if (!EXP.some((item) => item.key === form.experience)) {
-      return 'Please select a valid experience level.';
-    }
-
-    return null;
-  };
+  const set = (patch) => setForm((f) => ({ ...f, ...patch }));
+  const toggleSpec = (id) => set({
+    specialization_ids: form.specialization_ids.includes(id)
+      ? form.specialization_ids.filter((x) => x !== id)
+      : [...form.specialization_ids, id],
+  });
 
   const save = async () => {
-    if (saving) return;
-
-    const validationError = validateForm();
-
-    if (validationError) {
-      Alert.alert('Check your profile', validationError);
-      return;
-    }
-
     setSaving(true);
-
+    setStatus({ kind: '', text: '' });
     try {
-      const payload = {
-        ...form,
-        bio: form.bio.trim(),
-        location_name: form.location_name.trim(),
-        hourly_rate: Number(form.hourly_rate),
-        years_exp: Number(form.years_exp),
-        specialization_ids: form.specialization_ids,
-        is_available: Boolean(form.is_available),
-      };
-
-      await caregiverApi.updateMyProfile(payload);
-
-      Alert.alert(
-        'Profile updated',
-        'Your changes have been saved successfully.'
-      );
-    } catch (error) {
-      console.error('Profile save failed:', error);
-
-      Alert.alert(
-        'Could not save profile',
-        getErrorMessage(error)
-      );
+      const years = Number(form.years_exp) || 0;
+      const payload = { ...form, years_exp: years, experience: levelFor(years), hourly_rate: Number(form.hourly_rate) || 0 };
+      if (!payload.id_number) delete payload.id_number;
+      await caregiverApi.updateMe(payload);
+      if (account.full_name !== user.full_name || account.phone !== (user.phone ?? '')) {
+        const { data: me } = await authApi.updateMe(account);
+        updateUser(me);
+      }
+      set({ id_number: '' });
+      setStatus({ kind: 'success', text: 'Profile saved. Families see your changes right away.' });
+    } catch (e) {
+      setStatus({ kind: 'error', text: errorMessage(e) });
     } finally {
       setSaving(false);
     }
   };
 
-  if (loading) {
-    return <LoadingScreen message="Loading your profile..." />;
-  }
+  return (
+    <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 110 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+        <ScreenHeader title="Your profile" subtitle="This is what families see when they find you." />
+
+        <View style={{ paddingHorizontal: 20, gap: 12 }}>
+          {/* Identity */}
+          <Card style={s.idCard}>
+            <Avatar uri={user?.avatar} name={user?.full_name} size={56} />
+            <View style={{ flex: 1 }}>
+              <Text style={TYPE.h4}>{user?.full_name}</Text>
+              <View style={{ flexDirection: 'row', gap: 6, marginTop: 4 }}>
+                {user?.is_verified ? <Badge label="verified" /> : <Badge label="pending" />}
+              </View>
+            </View>
+            <TouchableOpacity onPress={() => navigation.navigate('Earnings')} style={s.smallBtn}>
+              <Feather name="credit-card" size={16} color={C.primary} />
+            </TouchableOpacity>
+          </Card>
+
+          {status.text ? <Notice kind={status.kind}>{status.text}</Notice> : null}
+
+          {/* Visibility */}
+          <Card style={s.switchRow}>
+            <View style={{ flex: 1 }}>
+              <Text style={TYPE.h4}>Available for new clients</Text>
+              <Text style={TYPE.caption}>{form.is_available ? 'Families can find and book you.' : "You won't appear in search."}</Text>
+            </View>
+            <Switch value={!!form.is_available} onValueChange={(v) => set({ is_available: v })}
+              trackColor={{ true: C.success, false: C.border }} thumbColor="#fff" />
+          </Card>
+
+          {/* About */}
+          <Card>
+            <Text style={s.h}>About you</Text>
+            <Input label="Full name" value={account.full_name} onChangeText={(v) => setAccount((a) => ({ ...a, full_name: v }))} />
+            <Input label="Phone (M-Pesa)" value={account.phone} keyboardType="phone-pad" placeholder="0712 345 678"
+              onChangeText={(v) => setAccount((a) => ({ ...a, phone: v }))} />
+            <Input label="Bio" multiline value={form.bio} onChangeText={(bio) => set({ bio })}
+              placeholder="Your experience, the kind of clients you've cared for, languages you speak…" containerStyle={{ marginBottom: 0 }} />
+          </Card>
+
+          {/* Rate & experience */}
+          <Card>
+            <Text style={s.h}>Rate & experience</Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <Input label="Hourly rate (KES)" keyboardType="number-pad" value={form.hourly_rate}
+                onChangeText={(t) => set({ hourly_rate: t.replace(/\D/g, '') })} containerStyle={{ flex: 1, marginBottom: 0 }} />
+              <Input label="Years of experience" keyboardType="number-pad" value={form.years_exp}
+                onChangeText={(t) => set({ years_exp: t.replace(/\D/g, '') })} containerStyle={{ flex: 1, marginBottom: 0 }} />
+            </View>
+            <Text style={[TYPE.caption, { marginTop: 8 }]}>Most Nairobi caregivers charge KES 400–1,000 per hour.</Text>
+          </Card>
+
+          {/* Area */}
+          <Card>
+            <Text style={s.h}>Where you work</Text>
+            <Text style={[TYPE.caption, { marginBottom: 12 }]}>Distance is part of the match score and shows on open jobs.</Text>
+            <AreaPicker value={form} onChange={(loc) => set(loc)} />
+          </Card>
+
+          {/* Specialties */}
+          <Card>
+            <Text style={s.h}>Specialties</Text>
+            <Text style={[TYPE.caption, { marginBottom: 12 }]}>Specialty is the biggest part of the match score.</Text>
+            <View style={s.wrap}>
+              {specs.length === 0 ? <Text style={TYPE.body}>No specialties set up yet.</Text> : specs.map((sp) => (
+                <Chip key={sp.id} label={sp.name} active={form.specialization_ids.includes(sp.id)} onPress={() => toggleSpec(sp.id)} />
+              ))}
+            </View>
+          </Card>
+
+          {/* Availability (saves immediately) */}
+          <AvailabilityEditor slots={slots} setSlots={setSlots} />
+
+          {/* Verification */}
+          {!user?.is_verified ? (
+            <Card>
+              <Text style={s.h}>Verification</Text>
+              <Input label="National ID number" keyboardType="number-pad" value={form.id_number}
+                onChangeText={(t) => set({ id_number: t.replace(/\D/g, '').slice(0, 10) })}
+                placeholder="e.g. 12345678" hint="Tunza checks your ID before families can find you." containerStyle={{ marginBottom: 0 }} />
+            </Card>
+          ) : null}
+
+          <TouchableOpacity onPress={() => navigation.navigate('AccountDetails')} style={s.linkRow}>
+            <Feather name="settings" size={17} color={C.textBody} />
+            <Text style={[TYPE.label, { flex: 1 }]}>Account details</Text>
+            <Feather name="chevron-right" size={18} color={C.textFaint} />
+          </TouchableOpacity>
+          <Button title="Log out" variant="danger-soft" iconName="log-out"
+            onPress={() => Alert.alert('Log out?', 'You will need to sign in again.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Log out', style: 'destructive', onPress: logout }])} />
+        </View>
+      </ScrollView>
+
+      <View style={s.bar}>
+        <Button title="Save profile" iconName="check" onPress={save} loading={saving} />
+      </View>
+    </KeyboardAvoidingView>
+  );
+}
+
+function AvailabilityEditor({ slots, setSlots }) {
+  const taken = new Set(slots.map((x) => x.day));
+  const free = DAYS.map((d, i) => i).filter((i) => !taken.has(i));
+  const [draft, setDraft] = useState({ day: free[0] ?? 0, start_time: '08:00', end_time: '17:00' });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (taken.has(draft.day) && free.length) setDraft((x) => ({ ...x, day: free[0] }));
+  }, [slots]); 
+
+  const add = async () => {
+    setError('');
+    if (draft.end_time <= draft.start_time) return setError('End time must be after start time.');
+    setBusy(true);
+    try {
+      const { data } = await caregiverApi.addAvailability(draft);
+      setSlots((list) => [...list, data].sort((a, b) => a.day - b.day));
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (id) => {
+    setError('');
+    try {
+      await caregiverApi.delAvailability(id);
+      setSlots((list) => list.filter((x) => x.id !== id));
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  };
 
   return (
-    <ScrollView
-      style={{ flex: 1, backgroundColor: C.bg }}
-      contentContainerStyle={{ paddingBottom: 48 }}
-      keyboardShouldPersistTaps="handled"
-      showsVerticalScrollIndicator={false}
-    >
-      <LinearGradient
-        colors={GRADIENT.primary}
-        start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={s.header}
-      >
-        <Text style={s.headerTitle}>Edit Profile</Text>
-        <Text style={s.headerSub}>
-          Keep your profile updated to get more bookings.
-        </Text>
-      </LinearGradient>
-
-      <View style={s.content}>
-        {/* Basic information */}
-        <Card>
-          <Text style={s.sectionTitle}>Basic Information</Text>
-
-          <Input
-            label="Bio / About Me"
-            placeholder="Describe your experience and approach to care..."
-            value={form.bio}
-            onChangeText={(value) => set('bio', value)}
-            multiline
-            numberOfLines={4}
-            style={s.bioInput}
-          />
-
-          <Input
-            label="Hourly Rate (KES)"
-            placeholder="e.g. 500"
-            value={form.hourly_rate}
-            onChangeText={(value) => set('hourly_rate', value)}
-            keyboardType="decimal-pad"
-            icon="💰"
-          />
-
-          <Input
-            label="Years of Experience"
-            placeholder="e.g. 3"
-            value={form.years_exp}
-            onChangeText={(value) => set('years_exp', value)}
-            keyboardType="number-pad"
-            icon="📅"
-          />
-
-          <Input
-            label="Location / Area"
-            placeholder="e.g. Westlands, Nairobi"
-            value={form.location_name}
-            onChangeText={(value) => set('location_name', value)}
-            icon="📍"
-          />
-        </Card>
-
-        {/* Experience level */}
-        <Card>
-          <Text style={s.sectionTitle}>Experience Level</Text>
-
-          <View style={s.expRow}>
-            {EXP.map((item) => {
-              const active = form.experience === item.key;
-
-              return (
-                <TouchableOpacity
-                  key={item.key}
-                  activeOpacity={0.8}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: active }}
-                  style={[
-                    s.expChip,
-                    active && s.expChipActive,
-                  ]}
-                  onPress={() => set('experience', item.key)}
-                >
-                  <Text
-                    style={[
-                      s.expTitle,
-                      active && s.activeText,
-                    ]}
-                  >
-                    {item.label}
-                  </Text>
-
-                  <Text style={s.expSub}>{item.sub}</Text>
-                </TouchableOpacity>
-              );
-            })}
+    <Card>
+      <Text style={s.h}>Weekly availability</Text>
+      <Text style={[TYPE.caption, { marginBottom: 8 }]}>Availability is 25% of the match score. Changes save immediately.</Text>
+      {slots.length === 0 ? <Text style={[TYPE.body, { paddingVertical: 6 }]}>No days added yet.</Text> : slots.map((x, i) => (
+        <View key={x.id} style={[s.slot, i > 0 && s.divider]}>
+          <Text style={[TYPE.label, { width: 100 }]}>{DAYS_LONG[x.day]}</Text>
+          <Text style={[TYPE.body, { flex: 1 }]}>{fmtShortTime(x.start_time)} – {fmtShortTime(x.end_time)}</Text>
+          <TouchableOpacity onPress={() => remove(x.id)} hitSlop={8} accessibilityLabel={`Remove ${DAYS_LONG[x.day]}`}>
+            <Feather name="trash-2" size={16} color={C.textFaint} />
+          </TouchableOpacity>
+        </View>
+      ))}
+      {free.length > 0 ? (
+        <View style={s.addBox}>
+          <View style={s.wrap}>
+            {free.map((i) => <Chip key={i} label={DAYS[i]} active={draft.day === i} onPress={() => setDraft((d) => ({ ...d, day: i }))} />)}
           </View>
-        </Card>
-
-        {/* Specializations */}
-        <Card>
-          <Text style={s.sectionTitle}>Specializations</Text>
-
-          {specs.length === 0 ? (
-            <Text style={TYPE.body}>
-              Specializations could not be loaded. You can still
-              update the rest of your profile.
-            </Text>
-          ) : (
-            <>
-              <Text style={s.helperText}>
-                Select all the types of care you are qualified to provide.
-              </Text>
-
-              <View style={s.specGrid}>
-                {specs.map((specialization) => {
-                  const selected = (
-                    form.specialization_ids ?? []
-                  ).some(
-                    (id) =>
-                      String(id) === String(specialization.id)
-                  );
-
-                  return (
-                    <TouchableOpacity
-                      key={String(specialization.id)}
-                      activeOpacity={0.8}
-                      accessibilityRole="checkbox"
-                      accessibilityState={{ checked: selected }}
-                      style={[
-                        s.specChip,
-                        selected && s.specChipActive,
-                      ]}
-                      onPress={() => toggleSpec(specialization.id)}
-                    >
-                      {selected && (
-                        <Text style={s.checkmark}>✓</Text>
-                      )}
-
-                      <Text
-                        style={[
-                          s.specTxt,
-                          selected && s.activeText,
-                        ]}
-                      >
-                        {specialization.name}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            </>
-          )}
-        </Card>
-
-        {/* Availability */}
-        <Card>
-          <View style={s.availabilityRow}>
-            <View style={s.availabilityText}>
-              <Text style={s.sectionTitle}>
-                Available for Bookings
-              </Text>
-
-              <Text style={s.availabilitySub}>
-                {form.is_available
-                  ? 'Patients can find your profile in search.'
-                  : 'Your profile will not appear in availability-based searches.'}
-              </Text>
-            </View>
-
-            <Switch
-              value={Boolean(form.is_available)}
-              onValueChange={(value) => set('is_available', value)}
-              trackColor={{
-                true: C.primary,
-                false: C.border,
-              }}
-              thumbColor="#FFFFFF"
-              accessibilityLabel="Available for bookings"
-            />
-          </View>
-        </Card>
-
-        <Button
-          title="Save Profile"
-          onPress={save}
-          loading={saving}
-        />
-      </View>
-    </ScrollView>
+          <Text style={s.mini}>From</Text>
+          <TimeChips value={draft.start_time} onChange={(t) => setDraft((d) => ({ ...d, start_time: t }))} from={5} to={22} />
+          <Text style={s.mini}>To</Text>
+          <TimeChips value={draft.end_time} onChange={(t) => setDraft((d) => ({ ...d, end_time: t }))} from={6} to={23} disabledBefore={draft.start_time} />
+          <Button title={`Add ${DAYS_LONG[draft.day]}`} variant="secondary" size="sm" iconName="plus" loading={busy} onPress={add} style={{ marginTop: 12 }} />
+        </View>
+      ) : null}
+      {error ? <Notice style={{ marginTop: 10 }}>{error}</Notice> : null}
+    </Card>
   );
 }
 
 const s = StyleSheet.create({
-  header: {
-    paddingTop: 56,
-    paddingBottom: 28,
-    paddingHorizontal: 20,
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#FFFFFF',
-  },
-  headerSub: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.75)',
-    marginTop: 4,
-    lineHeight: 19,
-  },
-  content: {
-    padding: 16,
-    gap: 12,
-  },
-  sectionTitle: {
-    fontSize: 15,
-    fontWeight: '700',
-    color: C.text,
-    marginBottom: 12,
-  },
-  bioInput: {
-    textAlignVertical: 'top',
-    minHeight: 80,
-  },
-  expRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  expChip: {
-    flex: 1,
-    borderRadius: RADIUS.md,
-    borderWidth: 1.5,
-    borderColor: C.border,
-    backgroundColor: C.bg,
-    padding: 12,
-    alignItems: 'center',
-  },
-  expChipActive: {
-    borderColor: C.primary,
-    backgroundColor: C.primaryXLight,
-  },
-  expTitle: {
-    fontWeight: '700',
-    fontSize: 14,
-    color: C.textMuted,
-  },
-  activeText: {
-    color: C.primary,
-  },
-  expSub: {
-    fontSize: 11,
-    color: C.textFaint,
-    marginTop: 3,
-  },
-  helperText: {
-    ...TYPE.caption,
-    marginBottom: 12,
-  },
-  specGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  specChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: RADIUS.pill,
-    borderWidth: 1.5,
-    borderColor: C.border,
-    backgroundColor: C.bg,
-  },
-  specChipActive: {
-    borderColor: C.primary,
-    backgroundColor: C.primaryXLight,
-  },
-  checkmark: {
-    fontSize: 11,
-    fontWeight: '800',
-    color: C.primary,
-    marginRight: 5,
-  },
-  specTxt: {
-    fontSize: 13,
-    fontWeight: '600',
-    color: C.textMuted,
-  },
-  availabilityRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: 12,
-  },
-  availabilityText: {
-    flex: 1,
-  },
-  availabilitySub: {
-    ...TYPE.caption,
-    lineHeight: 18,
-  },
+  idCard:    { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  smallBtn:  { width: 38, height: 38, borderRadius: RADIUS.md, backgroundColor: C.primaryXLight, alignItems: 'center', justifyContent: 'center' },
+  switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  h:         { fontSize: 15, fontWeight: '800', color: C.text, marginBottom: 12 },
+  wrap:      { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  slot:      { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
+  divider:   { borderTopWidth: 1, borderTopColor: C.borderLight },
+  addBox:    { marginTop: 10, backgroundColor: C.cardSoft, borderRadius: RADIUS.md, padding: 12 },
+  mini:      { fontSize: 12, fontWeight: '700', color: C.textMuted, marginTop: 12, marginBottom: 6 },
+  linkRow:   { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.card, borderRadius: RADIUS.lg, padding: 16, borderWidth: 1, borderColor: C.borderLight },
+  bar:       { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 20, paddingVertical: 12, backgroundColor: C.card, borderTopWidth: 1, borderTopColor: C.borderLight, ...SHADOWS.lg },
 });

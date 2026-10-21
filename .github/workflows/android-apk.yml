@@ -1,0 +1,88 @@
+name: Android APK (pilot)
+
+# Builds an installable release APK of the Tunza mobile app.
+# Runs on every push to main that touches mobile/, or by hand from the
+# Actions tab ("Run workflow"), where you can also point it at another API.
+
+on:
+  push:
+    branches: [main]
+    paths: ['mobile/**', '.github/workflows/android-apk.yml']
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: 'Backend API URL baked into the app (leave blank for the default)'
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: mobile
+    env:
+      # Order of preference: manual input → repo variable API_URL → Render default
+      EXPO_PUBLIC_API_URL: ${{ github.event.inputs.api_url || vars.API_URL || 'https://tunza-api.onrender.com/api' }}
+      GOOGLE_MAPS_API_KEY: ${{ secrets.GOOGLE_MAPS_API_KEY }}
+      EXPO_PUBLIC_MAPS_ENABLED: ${{ secrets.GOOGLE_MAPS_API_KEY != '' && 'true' || 'false' }}
+      ANDROID_VERSION_CODE: ${{ github.run_number }}
+      CI: 1
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Install JS dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Generate native Android project
+        run: npx expo prebuild --platform android --clean --no-install
+
+      - name: Build release APK
+        working-directory: mobile/android
+        run: ./gradlew assembleRelease --no-daemon -PreactNativeArchitectures=arm64-v8a,armeabi-v7a
+
+      - name: Name the APK
+        id: apk
+        run: |
+          NAME="tunza-pilot-${{ github.run_number }}.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk "$NAME"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          echo "Built $NAME against $EXPO_PUBLIC_API_URL" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tunza-apk
+          path: mobile/${{ steps.apk.outputs.name }}
+          retention-days: 30
+
+      - name: Publish as a GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: pilot-${{ github.run_number }}
+          name: Tunza pilot build ${{ github.run_number }}
+          prerelease: true
+          files: mobile/${{ steps.apk.outputs.name }}
+          body: |
+            Android APK for pilot testers.
+            API: ${{ env.EXPO_PUBLIC_API_URL }}
+            Install: download the .apk on the phone, open it, and allow "Install unknown apps" when asked.

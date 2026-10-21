@@ -1,17 +1,19 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { Feather } from '@expo/vector-icons';
 import { authApi } from '../api';
 import { useAuth } from '../context/AuthContext';
-import { Avatar, Input, Button, Card, Badge, COLORS } from '../components/ui';
-import { COLORS as C, GRADIENT, RADIUS, SHADOWS, TYPE } from '../theme';
+import { Avatar, Badge, Button, Card, Input, ScreenHeader } from '../components/ui';
+import { COLORS as C, RADIUS, TYPE } from '../theme';
+import { errorMessage, fmtDate } from '../lib/format';
 
-export default function AccountScreen() {
+/** Account details + sign out. Patients reach it from the Profile tab; caregivers from their Profile screen. */
+export default function AccountScreen({ navigation, route }) {
   const { user, updateUser, logout } = useAuth();
-  const [form,       setForm]        = useState({ full_name: user?.full_name || '', phone: user?.phone || '' });
-  const [saving,     setSaving]      = useState(false);
-  const [loggingOut, setLoggingOut]  = useState(false);
-  const [editMode,   setEditMode]    = useState(false);
+  const [form, setForm] = useState({ full_name: user?.full_name || '', phone: user?.phone || '' });
+  const [saving, setSaving] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const isStackScreen = route?.name === 'AccountDetails';
 
   const save = async () => {
     setSaving(true);
@@ -19,99 +21,87 @@ export default function AccountScreen() {
       const { data } = await authApi.updateMe(form);
       updateUser(data);
       setEditMode(false);
-      Alert.alert('Saved ✅', 'Your profile has been updated.');
     } catch (err) {
-      Alert.alert('Error', err.response?.data?.detail || 'Could not save changes.');
+      Alert.alert('Could not save', errorMessage(err));
     } finally { setSaving(false); }
   };
 
-  const handleLogout = () => {
-    Alert.alert('Log Out?', 'You will need to sign in again to use the app.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Log Out', style: 'destructive', onPress: async () => {
-        setLoggingOut(true);
-        await logout();
-      }},
-    ]);
-  };
+  const handleLogout = () => Alert.alert('Log out?', 'You will need to sign in again to use Tunza.', [
+    { text: 'Cancel', style: 'cancel' },
+    { text: 'Log out', style: 'destructive', onPress: logout },
+  ]);
 
-  const ROLE_COLORS = { admin: C.danger, patient: C.primary, caregiver: C.success };
+  const shortcuts = user?.role === 'patient' ? [
+    { icon: 'clipboard', label: 'My care requests', onPress: () => navigation.navigate('MyRequests') },
+    { icon: 'calendar', label: 'Bookings', onPress: () => navigation.navigate('Bookings') },
+    { icon: 'plus-circle', label: 'Book a caregiver', onPress: () => navigation.navigate('CareNeeds', { path: 'smart_match' }) },
+  ] : [];
 
-  const infoItems = [
-    { label: 'Email',        value: user?.email },
-    { label: 'Role',         value: user?.role?.charAt(0).toUpperCase() + user?.role?.slice(1), color: ROLE_COLORS[user?.role] },
-    { label: 'Account Status', value: user?.is_verified ? 'Verified ✅' : 'Pending Verification', color: user?.is_verified ? C.success : C.warning },
-    { label: 'Member Since', value: new Date(user?.date_joined).toLocaleDateString('en-KE', { day:'numeric', month:'long', year:'numeric' }) },
+  const info = [
+    { label: 'Email', value: user?.email },
+    { label: 'Phone', value: user?.phone || '—' },
+    { label: 'Account', value: user?.is_verified ? 'Verified' : 'Pending verification', color: user?.is_verified ? C.success : C.warning },
+    { label: 'Member since', value: user?.date_joined ? fmtDate(user.date_joined) : '—' },
   ];
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: C.bg }}
-      contentContainerStyle={{ paddingBottom: 60 }}
-      showsVerticalScrollIndicator={false}>
+    <ScrollView style={{ flex: 1, backgroundColor: C.bg }} contentContainerStyle={{ paddingBottom: 48 }} showsVerticalScrollIndicator={false}>
+      <ScreenHeader title="Profile" onBack={isStackScreen ? () => navigation.goBack() : undefined} />
 
-      {/* Profile hero */}
-      <LinearGradient colors={GRADIENT.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.hero}>
-        <Avatar uri={user?.avatar} name={user?.full_name} size={80} ring />
-        <Text style={s.heroName}>{user?.full_name}</Text>
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-          <Badge label={user?.role} />
-          {user?.is_verified && <Badge label="verified" />}
-        </View>
-        <TouchableOpacity style={s.editBtn} onPress={() => setEditMode(!editMode)}>
-          <Text style={{ color: C.primary, fontWeight: '700', fontSize: 13 }}>
-            {editMode ? 'Cancel' : '✏ Edit Profile'}
-          </Text>
-        </TouchableOpacity>
-      </LinearGradient>
+      <View style={{ paddingHorizontal: 20, gap: 12 }}>
+        <Card style={s.hero}>
+          <Avatar uri={user?.avatar} name={user?.full_name} size={64} />
+          <View style={{ flex: 1 }}>
+            <Text style={TYPE.h3}>{user?.full_name}</Text>
+            <View style={{ flexDirection: 'row', gap: 6, marginTop: 6 }}>
+              <Badge label={user?.role} />
+              {user?.is_verified ? <Badge label="verified" /> : null}
+            </View>
+          </View>
+          <TouchableOpacity onPress={() => setEditMode((v) => !v)} style={s.editBtn} accessibilityLabel="Edit profile">
+            <Feather name={editMode ? 'x' : 'edit-2'} size={16} color={C.primary} />
+          </TouchableOpacity>
+        </Card>
 
-      <View style={{ padding: 16, gap: 12 }}>
-
-        {/* Edit form */}
-        {editMode && (
+        {editMode ? (
           <Card>
-            <Text style={s.sectionTitle}>Edit Profile</Text>
-            <Input label="Full Name" value={form.full_name}
-              onChangeText={v => setForm(p => ({ ...p, full_name: v }))}
-              placeholder="Your full name" icon="👤" />
-            <Input label="Phone" value={form.phone}
-              onChangeText={v => setForm(p => ({ ...p, phone: v }))}
-              placeholder="0712345678" keyboardType="phone-pad" icon="📱" />
-            <Button title="Save Changes" onPress={save} loading={saving} />
+            <Input label="Full name" value={form.full_name} onChangeText={(v) => setForm((p) => ({ ...p, full_name: v }))} iconName="user" />
+            <Input label="Phone (M-Pesa)" value={form.phone} onChangeText={(v) => setForm((p) => ({ ...p, phone: v }))}
+              placeholder="0712 345 678" keyboardType="phone-pad" iconName="phone" />
+            <Button title="Save changes" onPress={save} loading={saving} />
           </Card>
-        )}
+        ) : null}
 
-        {/* Account details */}
-        <Card>
-          <Text style={s.sectionTitle}>Account Details</Text>
-          {infoItems.map((item, i) => (
-            <View key={i} style={[s.infoRow, i === infoItems.length - 1 && { borderBottomWidth: 0 }]}>
-              <Text style={TYPE.caption}>{item.label}</Text>
-              <Text style={[TYPE.h4, item.color && { color: item.color }]}>{item.value}</Text>
+        {shortcuts.length ? (
+          <Card noPad>
+            {shortcuts.map((r, i) => (
+              <TouchableOpacity key={r.label} onPress={r.onPress} style={[s.row, i > 0 && s.divider]} activeOpacity={0.8}>
+                <Feather name={r.icon} size={18} color={C.primary} />
+                <Text style={[TYPE.label, { flex: 1 }]}>{r.label}</Text>
+                <Feather name="chevron-right" size={18} color={C.textFaint} />
+              </TouchableOpacity>
+            ))}
+          </Card>
+        ) : null}
+
+        <Card noPad>
+          {info.map((item, i) => (
+            <View key={item.label} style={[s.row, i > 0 && s.divider]}>
+              <Text style={[TYPE.caption, { flex: 1 }]}>{item.label}</Text>
+              <Text style={[TYPE.label, item.color && { color: item.color }]} numberOfLines={1}>{item.value}</Text>
             </View>
           ))}
         </Card>
 
-        {/* Danger zone */}
-        <Card style={[s.dangerCard, { borderColor: C.dangerLight }]}>
-          <Text style={[s.sectionTitle, { color: C.danger }]}>Account Actions</Text>
-          <Button
-            title="Log Out"
-            variant="danger"
-            onPress={handleLogout}
-            loading={loggingOut}
-            icon="🚪"
-          />
-        </Card>
+        <Button title="Log out" variant="danger-soft" iconName="log-out" onPress={handleLogout} />
       </View>
     </ScrollView>
   );
 }
 
 const s = StyleSheet.create({
-  hero:        { paddingTop: 64, paddingBottom: 28, alignItems: 'center', gap: 6 },
-  heroName:    { fontSize: 22, fontWeight: '800', color: '#fff', marginTop: 10 },
-  editBtn:     { marginTop: 12, paddingHorizontal: 20, paddingVertical: 8, backgroundColor: 'rgba(255,255,255,0.95)', borderRadius: RADIUS.pill },
-  sectionTitle:{ fontSize: 15, fontWeight: '700', color: C.text, marginBottom: 14 },
-  infoRow:     { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: C.borderLight },
-  dangerCard:  { borderWidth: 1 },
+  hero:    { flexDirection: 'row', alignItems: 'center', gap: 14 },
+  editBtn: { width: 38, height: 38, borderRadius: RADIUS.md, backgroundColor: C.primaryXLight, alignItems: 'center', justifyContent: 'center' },
+  row:     { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14 },
+  divider: { borderTopWidth: 1, borderTopColor: C.borderLight },
 });

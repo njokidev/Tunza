@@ -10,6 +10,7 @@ urlpatterns = [
     path('me/',                 views.MeView.as_view(),                  name='me'),
     path('users/',              views.UserListView.as_view(),            name='user_list'),
     path('users/<uuid:user_id>/verify/', views.VerifyUserView.as_view(), name='verify_user'),
+    path('admin/stats/',       views.AdminStatsView.as_view(),          name='admin_stats'),
     path('notifications/',      views.NotificationListView.as_view(),    name='notifications'),
     path('notifications/<uuid:pk>/read/', views.MarkNotificationReadView.as_view(), name='notif_read'),
 ]

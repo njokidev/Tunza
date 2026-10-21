@@ -1,0 +1,81 @@
+# Render Blueprint for the Tunza pilot.
+# In Render: New + → Blueprint → pick this repo → Apply.
+# It creates the API, the web app and a Postgres database in one go.
+#
+# After the first deploy, check the two URLs Render gives you. If they are not
+# exactly tunza-api.onrender.com / tunza-web.onrender.com (Render adds a suffix
+# when a name is taken), update VITE_API_URL and CORS_ALLOWED_ORIGINS below
+# (or in the dashboard) and the API_URL variable in GitHub for the APK build.
+
+databases:
+  - name: tunza-db
+    plan: free
+    region: frankfurt
+    databaseName: tunza
+    user: tunza
+
+services:
+  # ── Django REST API ───────────────────────────────────────────────────────
+  - type: web
+    name: tunza-api
+    runtime: python
+    plan: free
+    region: frankfurt
+    rootDir: backend
+    buildCommand: ./build.sh
+    startCommand: gunicorn tunza.wsgi:application --workers 2 --timeout 60
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: DATABASE_URL
+        fromDatabase:
+          name: tunza-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        value: .onrender.com
+      - key: CORS_ALLOWED_ORIGINS
+        value: https://tunza-web.onrender.com,http://localhost:5173
+      - key: WEB_CONCURRENCY
+        value: "2"
+      # First admin account — Render asks you for these when you apply the
+      # Blueprint. Use your real email and a strong password.
+      - key: DJANGO_SUPERUSER_EMAIL
+        sync: false
+      - key: DJANGO_SUPERUSER_PASSWORD
+        sync: false
+      - key: DJANGO_SUPERUSER_FULL_NAME
+        value: Tunza Admin
+      # M-Pesa Daraja (sandbox) — optional, fill in later from the dashboard
+      - key: MPESA_ENV
+        value: sandbox
+      - key: MPESA_CONSUMER_KEY
+        sync: false
+      - key: MPESA_CONSUMER_SECRET
+        sync: false
+      - key: MPESA_PASSKEY
+        sync: false
+
+  # ── React web app (static) ────────────────────────────────────────────────
+  - type: web
+    name: tunza-web
+    runtime: static
+    rootDir: web
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://tunza-api.onrender.com/api
+    routes:
+      # Single-page app: let React Router handle every path
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    headers:
+      - path: /assets/*
+        name: Cache-Control
+        value: public, max-age=31536000, immutable

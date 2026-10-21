@@ -3,8 +3,11 @@ djangorestframework==3.15.1
 djangorestframework-simplejwt==5.3.1
 django-cors-headers==4.3.1
 python-decouple==3.8
-Pillow==11.0.0
+Pillow==10.3.0
 requests==2.31.0
 phonenumbers==8.13.36
 django-filter==24.2
-psycopg[binary]
+psycopg2-binary==2.9.9
+gunicorn==23.0.0
+whitenoise==6.8.2
+dj-database-url==2.3.0

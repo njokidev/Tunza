@@ -6,6 +6,7 @@ from accounts.permissions import IsPatient, IsCaregiver, IsAdmin
 from .models import Booking
 from payments.models import Payment
 from .serializers import BookingSerializer, BookingStatusSerializer
+from .services import can_transition, allowed_next
 
 
 class BookingListCreateView(generics.ListCreateAPIView):
@@ -58,22 +59,21 @@ class UpdateBookingStatusView(APIView):
             return Response({'detail': 'Not found.'}, status=status.HTTP_404_NOT_FOUND)
 
         new_status = request.data.get('status')
-        allowed = {
-            'caregiver': ['accepted', 'rejected', 'ongoing', 'completed'],
-            'patient':   ['cancelled'],
-            'admin':     list(Booking.Status.values),
-        }
-        if new_status not in allowed.get(user.role, []):
-            return Response({'detail': 'Status transition not allowed.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not can_transition(user.role, booking.status, new_status):
+            return Response({
+                'detail': f'Cannot change a {booking.status} booking to {new_status}.',
+                'allowed': allowed_next(user.role, booking.status),
+            }, status=status.HTTP_400_BAD_REQUEST)
 
         booking.status = new_status
         booking.notes  = request.data.get('notes', booking.notes)
         booking.save()
-        if new_status == Booking.Status.COMPLETED and user.role == 'caregiver':
-            # Mark booking as paid
+
+        if new_status == Booking.Status.COMPLETED:
+            # PILOT PLACEHOLDER: no money moves here. This marks the visit paid so the
+            # earnings screens work until the M-Pesa STK push + callback flow replaces it.
             booking.is_paid = True
             booking.save(update_fields=['is_paid'])
-            # Create payment record
             payment, created = Payment.objects.get_or_create(
                 booking=booking,
                 defaults={
@@ -83,11 +83,9 @@ class UpdateBookingStatusView(APIView):
                     'status': Payment.Status.SUCCESS,
                 }
             )
-            # Ensure status is SUCCESS
             if not created:
                 payment.status = Payment.Status.SUCCESS
                 payment.save(update_fields=['status'])
-            # Notify caregiver of payment
             Notification.objects.create(
                 user=booking.caregiver.user,
                 title='Payment Received',
@@ -95,15 +93,17 @@ class UpdateBookingStatusView(APIView):
                 type='payment',
             )
 
-        # notify the other party
-        if user.role == 'caregiver':
-            Notification.objects.create(
-                user=booking.patient,
-                title=f'Booking {new_status.capitalize()}',
-                body=f'Your booking with {booking.caregiver.user.full_name} was {new_status}.',
-                type='booking',
-            )
-        return Response(BookingSerializer(booking).data)
+        # Notify whoever did not make the change
+        label = new_status.capitalize()
+        patient_msg   = f'Your booking with {booking.caregiver.user.full_name} was {new_status}.'
+        caregiver_msg = f'Your booking with {booking.patient.full_name} was {new_status}.'
+        if user.role in ('caregiver', 'admin'):
+            Notification.objects.create(user=booking.patient, title=f'Booking {label}',
+                                        body=patient_msg, type='booking')
+        if user.role in ('patient', 'admin'):
+            Notification.objects.create(user=booking.caregiver.user, title=f'Booking {label}',
+                                        body=caregiver_msg, type='booking')
+        return Response(BookingSerializer(booking, context={'request': request}).data)
 
 
 class AdminBookingListView(generics.ListAPIView):

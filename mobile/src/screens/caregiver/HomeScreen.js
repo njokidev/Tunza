@@ -1,244 +1,281 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { View, Text, StyleSheet, FlatList, Switch, Alert, RefreshControl } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Switch, Alert, RefreshControl, TouchableOpacity } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import * as Location from 'expo-location';
-import { caregiverApi, bookingApi, locationApi } from '../../api';
-import { Card, Badge, Avatar, Button, StatCard, COLORS, Empty, LoadingScreen } from '../../components/ui';
-import { COLORS as C, GRADIENT, RADIUS, SHADOWS, TYPE, SPACING } from '../../theme';
+import { useFocusEffect } from '@react-navigation/native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
+import { bookingApi, careRequestApi, caregiverApi, locationApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
-import { format } from 'date-fns';
+import BookingCard from '../../components/BookingCard';
+import JobCard from '../../components/JobCard';
+import { Avatar, Button, Card, LoadingScreen, Notice, SectionLabel, StatCard, StatusPill } from '../../components/ui';
+import { COLORS as C, TYPE } from '../../theme';
+import { BOOKING_STATUS } from '../../lib/constants';
+import { useAppliedJobs } from '../../lib/applied';
+import {
+  careTypeLabel, caregiverNet, errorMessage, firstName, fmtTime, greeting, isSameDay, kes, unwrap, withDistance,
+} from '../../lib/format';
 
+/**
+ * Caregiver dashboard (web: caregiver/Dashboard.jsx).
+ *
+ * The caregiver journey, top to bottom:
+ *   1. Get set up    — verification + profile completeness (bio, specialties, area, availability)
+ *   2. Be findable   — "Available for new clients" toggle
+ *   3. Get work      — reply to booking requests; apply to open requests near you
+ *   4. Do the visit  — start → share location → end (payment released, less 12.5%)
+ */
 export default function CaregiverHomeScreen({ navigation }) {
-  const { user }                         = useAuth();
-  const [profile,    setProfile]         = useState(null);
-  const [bookings,   setBookings]        = useState([]);
-  const [available,  setAvailable]       = useState(true);
-  const [loading,    setLoading]         = useState(true);
-  const [refreshing, setRefreshing]      = useState(false);
-  const [tracking,   setTracking]        = useState(false);
-  const locationSub                      = useRef(null);
+  const { user } = useAuth();
+  const insets = useSafeAreaInsets();
+  const applied = useAppliedJobs();
+  const [data, setData] = useState(null);
+  const [error, setError] = useState('');
+  const [refreshing, setRefreshing] = useState(false);
+  const [savingAvail, setSavingAvail] = useState(false);
+  const [tracking, setTracking] = useState(false);
+  const locationSub = useRef(null);
 
-  const fetchData = useCallback(async () => {
-    try {
-      const [pRes, bRes] = await Promise.all([
-        caregiverApi.myProfile(),
-        bookingApi.list(),
-      ]);
-      setProfile(pRes.data);
-      setAvailable(pRes.data.is_available);
-      setBookings(bRes.data.results || bRes.data);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); setRefreshing(false); }
+  const load = useCallback(async () => {
+    const [profile, bookings, open] = await Promise.allSettled([caregiverApi.me(), bookingApi.list(), careRequestApi.open()]);
+    if (profile.status === 'rejected') {
+      setError(errorMessage(profile.reason));
+    } else {
+      setError('');
+      setData({
+        profile: profile.value.data,
+        bookings: bookings.status === 'fulfilled' ? unwrap(bookings.value.data) : [],
+        open: open.status === 'fulfilled' ? unwrap(open.value.data) : [],
+      });
+    }
+    setRefreshing(false);
   }, []);
 
-  useEffect(() => { fetchData(); }, []);
+  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useEffect(() => () => locationSub.current?.remove(), []);
 
-  const toggleAvail = async (val) => {
+  const v = useMemo(() => {
+    const bookings = data?.bookings ?? [];
+    const now = new Date();
+    const pending = bookings.filter((b) => b.status === 'pending').sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
+    const ongoing = bookings.find((b) => b.status === 'ongoing');
+    const today = bookings
+      .filter((b) => b.status === 'ongoing' || (b.status === 'accepted' && isSameDay(b.start_date, now)))
+      .sort((a, b) => new Date(a.start_date) - new Date(b.start_date));
+    const nextUp = bookings
+      .filter((b) => b.status === 'accepted' && new Date(b.start_date) > now)
+      .sort((a, b) => new Date(a.start_date) - new Date(b.start_date))[0];
+    const monthNet = bookings
+      .filter((b) => b.status === 'completed' && new Date(b.end_date).getMonth() === now.getMonth() && new Date(b.end_date).getFullYear() === now.getFullYear())
+      .reduce((sum, b) => sum + caregiverNet(b.total_amount), 0);
+    const nearby = withDistance(data?.open ?? [], data?.profile).filter(({ r }) => !applied.has(r.id)).slice(0, 2);
+    return { pending, ongoing, today, nextUp, monthNet, nearby };
+  }, [data, applied]);
+
+  if (!data) {
+    return error ? (
+      <View style={{ flex: 1, backgroundColor: C.bg, padding: 20, paddingTop: insets.top + 20 }}>
+        <Notice>{error}</Notice>
+        <Button title="Try again" style={{ marginTop: 12 }} onPress={load} />
+      </View>
+    ) : <LoadingScreen />;
+  }
+
+  const p = data.profile;
+  const missing = [
+    !p.bio && 'a short bio',
+    !p.specializations?.length && 'your specialties',
+    !p.location_name && 'your area',
+    !p.availability?.length && 'weekly availability',
+    !Number(p.hourly_rate) && 'your hourly rate',
+  ].filter(Boolean);
+  const steps = [
+    { done: user?.is_verified, label: 'ID verified by Tunza' },
+    { done: missing.length === 0, label: 'Profile complete' },
+    { done: p.is_available, label: 'Taking new clients' },
+  ];
+  const setupDone = steps.every((s) => s.done);
+
+  const toggleAvailability = async (val) => {
+    setSavingAvail(true);
     try {
-      await caregiverApi.updateMyProfile({ is_available: val });
-      setAvailable(val);
-    } catch { Alert.alert('Error', 'Could not update availability.'); }
+      await caregiverApi.updateMe({ is_available: val });
+      setData((d) => ({ ...d, profile: { ...d.profile, is_available: val } }));
+    } catch (e) {
+      Alert.alert('Could not update availability', errorMessage(e));
+    } finally {
+      setSavingAvail(false);
+    }
+  };
+
+  const replaceBooking = (updated) => {
+    setData((d) => ({ ...d, bookings: d.bookings.map((b) => (b.id === updated.id ? { ...b, ...updated } : b)) }));
+    if (updated.status !== 'ongoing' && tracking) stopTracking();
   };
 
   const startTracking = async (bookingId) => {
     const { status } = await Location.requestForegroundPermissionsAsync();
     if (status !== 'granted') {
-      Alert.alert('Permission Required', 'Location access is needed to share your position with the patient.');
+      Alert.alert('Location needed', 'Allow location so the family can see you are on the way.');
       return;
     }
     setTracking(true);
     locationSub.current = await Location.watchPositionAsync(
       { accuracy: Location.Accuracy.High, timeInterval: 5000, distanceInterval: 10 },
-      async ({ coords }) => {
-        try {
-          await locationApi.update({
-            booking_id: bookingId,
-            latitude: coords.latitude,
-            longitude: coords.longitude,
-            accuracy: coords.accuracy,
-          });
-        } catch { /* silent */ }
-      }
+      ({ coords }) => {
+        locationApi.update({ booking_id: bookingId, latitude: coords.latitude, longitude: coords.longitude, accuracy: coords.accuracy }).catch(() => {});
+      },
     );
   };
-
-  const stopTracking = () => {
-    locationSub.current?.remove();
-    setTracking(false);
-  };
-
-  const ongoingBooking = bookings.find(b => b.status === 'ongoing');
-  const pendingCount   = bookings.filter(b => b.status === 'pending').length;
-  const doneCount      = bookings.filter(b => b.status === 'completed').length;
-
-  if (loading) return <LoadingScreen />;
-
-  const firstName = user?.full_name?.split(' ')[0] || 'there';
+  const stopTracking = () => { locationSub.current?.remove(); locationSub.current = null; setTracking(false); };
 
   return (
-    <View style={{ flex: 1, backgroundColor: C.bg }}>
-      <FlatList
-        data={bookings.slice(0, 5)}
-        keyExtractor={b => b.id}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl refreshing={refreshing}
-            onRefresh={() => { setRefreshing(true); fetchData(); }}
-            colors={[C.primary]} tintColor={C.primary} />
-        }
-        ListHeaderComponent={
-          <>
-            {/* ── Gradient header ── */}
-            <LinearGradient colors={GRADIENT.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.header}>
-              <View style={s.headerTop}>
-                <View>
-                  <Text style={s.greeting}>Hello, {firstName} 👋</Text>
-                  <Text style={s.subGreeting}>Caregiver Dashboard</Text>
-                </View>
-                <View style={s.availRow}>
-                  <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12, fontWeight: '600' }}>
-                    {available ? 'Available' : 'Off Duty'}
-                  </Text>
-                  <Switch
-                    value={available}
-                    onValueChange={toggleAvail}
-                    trackColor={{ true: '#4ADE80', false: 'rgba(255,255,255,0.3)' }}
-                    thumbColor="#fff"
-                    ios_backgroundColor="rgba(255,255,255,0.3)"
-                  />
-                </View>
-              </View>
+    <ScrollView
+      style={{ flex: 1, backgroundColor: C.bg }}
+      contentContainerStyle={{ paddingTop: insets.top + 14, paddingBottom: 32, paddingHorizontal: 20 }}
+      showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={[C.primary]} tintColor={C.primary} />}
+    >
+      {/* ── Greeting ── */}
+      <View style={s.greetRow}>
+        <View style={{ flex: 1 }}>
+          <Text style={s.greetSmall}>{greeting()},</Text>
+          <Text style={s.greet}>{firstName(user?.full_name)} 👋</Text>
+        </View>
+        <TouchableOpacity onPress={() => navigation.navigate('Profile')}>
+          <Avatar uri={user?.avatar} name={user?.full_name} size={44} />
+        </TouchableOpacity>
+      </View>
 
-              {/* ── Stats row inside header ── */}
-              <View style={s.statsRow}>
-                <View style={s.statPill}>
-                  <Text style={s.statNum}>{profile?.rating_avg || '—'}</Text>
-                  <Text style={s.statLbl}>⭐ Rating</Text>
-                </View>
-                <View style={s.statDivider} />
-                <View style={s.statPill}>
-                  <Text style={s.statNum}>{pendingCount}</Text>
-                  <Text style={s.statLbl}>📋 Pending</Text>
-                </View>
-                <View style={s.statDivider} />
-                <View style={s.statPill}>
-                  <Text style={s.statNum}>{doneCount}</Text>
-                  <Text style={s.statLbl}>✅ Done</Text>
-                </View>
-                <View style={s.statDivider} />
-                <View style={s.statPill}>
-                  <Text style={s.statNum}>{profile?.rating_count || 0}</Text>
-                  <Text style={s.statLbl}>📝 Reviews</Text>
-                </View>
-              </View>
-            </LinearGradient>
+      {/* ── Availability toggle ── */}
+      <Card style={[s.availCard, p.is_available && { borderColor: '#A7F3D0', backgroundColor: C.successLight }]}>
+        <View style={[s.dot, { backgroundColor: p.is_available ? C.success : C.textFaint }]} />
+        <View style={{ flex: 1 }}>
+          <Text style={TYPE.h4}>{p.is_available ? 'Available for new clients' : 'Not taking clients'}</Text>
+          <Text style={TYPE.caption}>{p.is_available ? 'Families can find and book you.' : "You won't appear in Smart Match or Browse."}</Text>
+        </View>
+        <Switch value={!!p.is_available} onValueChange={toggleAvailability} disabled={savingAvail}
+          trackColor={{ true: C.success, false: C.border }} thumbColor="#fff" />
+      </Card>
 
-            <View style={{ padding: 16 }}>
-              {/* ── Active session banner ── */}
-              {ongoingBooking && (
-                <View style={[s.sessionCard, SHADOWS.md]}>
-                  <LinearGradient
-                    colors={tracking ? ['#059669', '#047857'] : GRADIENT.primary}
-                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
-                    style={s.sessionGrad}
-                  >
-                    <View style={s.sessionDot} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}>
-                        Active Session
-                      </Text>
-                      <Text style={{ color: 'rgba(255,255,255,0.8)', fontSize: 12, marginTop: 2 }}>
-                        Patient: {ongoingBooking.patient?.full_name}
-                      </Text>
-                    </View>
-                  </LinearGradient>
-                  <View style={s.sessionActions}>
-                    {tracking ? (
-                      <Button title="⏹ Stop Sharing Location" variant="outline"
-                        onPress={stopTracking} style={{ flex: 1 }} />
-                    ) : (
-                      <Button title="📍 Share My Location"
-                        onPress={() => startTracking(ongoingBooking.id)} style={{ flex: 1 }} />
-                    )}
-                  </View>
-                </View>
-              )}
-
-              {/* ── Recent bookings header ── */}
-              <View style={s.sectionRow}>
-                <Text style={TYPE.h3}>Recent Bookings</Text>
-                <Text style={s.seeAll} onPress={() => navigation.navigate('Bookings')}>
-                  See all →
-                </Text>
+      {/* ── Getting set up (new caregivers) ── */}
+      {!setupDone ? (
+        <Card style={s.setup}>
+          <Text style={TYPE.h4}>Get ready for your first booking</Text>
+          <View style={{ gap: 8, marginTop: 10 }}>
+            {steps.map((st) => (
+              <View key={st.label} style={s.stepRow}>
+                <Feather name={st.done ? 'check-circle' : 'circle'} size={17} color={st.done ? C.success : C.textFaint} />
+                <Text style={[TYPE.body, { color: st.done ? C.textMuted : C.text }, st.done && { textDecorationLine: 'line-through' }]}>{st.label}</Text>
               </View>
+            ))}
+          </View>
+          {!user?.is_verified ? (
+            <Text style={[TYPE.caption, { marginTop: 10 }]}>
+              Families can't find you until Tunza verifies your ID. Add your national ID number on your profile.
+            </Text>
+          ) : null}
+          {missing.length ? (
+            <Text style={[TYPE.caption, { marginTop: 6 }]}>Add {missing.join(', ')} — specialty and availability make up 55% of the match score.</Text>
+          ) : null}
+          <Button title="Complete my profile" size="sm" iconName="user-check" style={{ marginTop: 14, alignSelf: 'flex-start' }}
+            onPress={() => navigation.navigate('Profile')} />
+        </Card>
+      ) : null}
+
+      {/* ── Visit in progress ── */}
+      {v.ongoing ? (
+        <View style={{ marginTop: 18 }}>
+          <SectionLabel label="Visit in progress" />
+          <Card style={[s.liveCard, tracking && { borderColor: '#A7F3D0' }]}>
+            <View style={s.liveTop}>
+              <View style={[s.dot, { backgroundColor: C.success }]} />
+              <Text style={[TYPE.h4, { flex: 1 }]}>{v.ongoing.patient?.full_name}</Text>
+              <Text style={TYPE.caption}>since {fmtTime(v.ongoing.start_date)}</Text>
             </View>
-          </>
-        }
-        renderItem={({ item }) => (
-          <View style={{ paddingHorizontal: 16 }}>
-            <View style={[s.bookingRow, SHADOWS.card]}>
-              <View style={[s.statusBar, {
-                backgroundColor:
-                  item.status === 'pending'   ? C.warning :
-                  item.status === 'ongoing'   ? C.primary :
-                  item.status === 'completed' ? C.success : C.border
-              }]} />
-              <View style={s.bookingBody}>
-                <Avatar uri={item.patient?.avatar} name={item.patient?.full_name} size={40} />
-                <View style={{ flex: 1, marginLeft: 12 }}>
-                  <Text style={TYPE.h4}>{item.patient?.full_name}</Text>
-                  <Text style={[TYPE.caption, { textTransform: 'capitalize', marginTop: 2 }]}>
-                    {item.care_type?.replace('_', ' ')}
-                  </Text>
-                  <Text style={TYPE.micro}>
-                    {format(new Date(item.scheduled_start), 'dd MMM yyyy')}
-                  </Text>
-                </View>
-                <View style={{ alignItems: 'flex-end', gap: 6 }}>
-                  <Badge label={item.status} />
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: C.primary }}>
-                    KES {item.final_amount || item.estimated_amount}
-                  </Text>
-                </View>
+            <Button
+              title={tracking ? 'Stop sharing location' : 'Share my location with the family'}
+              iconName={tracking ? 'pause' : 'navigation'} size="sm"
+              variant={tracking ? 'outline' : 'secondary'}
+              onPress={() => (tracking ? stopTracking() : startTracking(v.ongoing.id))}
+              style={{ marginTop: 12 }}
+            />
+          </Card>
+          <BookingCard booking={v.ongoing} role="caregiver" onChange={replaceBooking} navigation={navigation} compact />
+        </View>
+      ) : null}
+
+      {/* ── Stats ── */}
+      <View style={s.stats}>
+        <StatCard iconName="bell" tone="amber" label="New requests" value={v.pending.length}
+          onPress={() => navigation.navigate('Bookings')} />
+        <StatCard iconName="clock" tone="sky" label="Today" value={v.today.length}
+          onPress={() => navigation.navigate('Bookings')} />
+        <StatCard iconName="credit-card" tone="green" label="This month" value={kes(v.monthNet)}
+          onPress={() => navigation.navigate('Earnings')} />
+      </View>
+
+      {error ? <Notice style={{ marginTop: 12 }}>{error}</Notice> : null}
+
+      {/* ── Booking requests to answer ── */}
+      <View style={{ marginTop: 22 }}>
+        <SectionLabel label="New booking requests" action={v.pending.length ? 'All bookings' : undefined} onAction={() => navigation.navigate('Bookings')} />
+        {v.pending.length === 0 ? (
+          <Card><Text style={TYPE.body}>No new requests. Keep your availability on so families can book you.</Text></Card>
+        ) : v.pending.slice(0, 3).map((b) => (
+          <BookingCard key={b.id} booking={b} role="caregiver" onChange={replaceBooking} navigation={navigation} />
+        ))}
+      </View>
+
+      {/* ── Today ── */}
+      <View style={{ marginTop: 22 }}>
+        <SectionLabel label="Today's schedule" />
+        <Card noPad>
+          {v.today.length === 0 ? (
+            <Text style={[TYPE.body, { padding: 16 }]}>
+              Nothing scheduled for today.{v.nextUp ? ` Next visit: ${v.nextUp.patient?.full_name}, ${new Date(v.nextUp.start_date).toDateString().slice(0, 10)} at ${fmtTime(v.nextUp.start_date)}.` : ''}
+            </Text>
+          ) : v.today.map((b, i) => (
+            <TouchableOpacity key={b.id} activeOpacity={0.85} onPress={() => navigation.navigate('Bookings')} style={[s.row, i > 0 && s.divider]}>
+              <Text style={s.time}>{fmtTime(b.start_date)}</Text>
+              <Avatar uri={b.patient?.avatar} name={b.patient?.full_name} size={36} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Text style={TYPE.h4} numberOfLines={1}>{b.patient?.full_name}</Text>
+                <Text style={TYPE.caption} numberOfLines={1}>{careTypeLabel(b.care_type)}</Text>
               </View>
-            </View>
-          </View>
-        )}
-        ListFooterComponent={
-          <View style={{ paddingHorizontal: 16, paddingBottom: 32, marginTop: 8 }}>
-            <Button title="View All Bookings" variant="outline"
-              onPress={() => navigation.navigate('Bookings')} />
-          </View>
-        }
-        ListEmptyComponent={
-          <View style={{ paddingHorizontal: 16 }}>
-            <Empty icon="📅" title="No bookings yet"
-              subtitle="Once patients book you, sessions will appear here" />
-          </View>
-        }
-      />
-    </View>
+              <StatusPill map={BOOKING_STATUS} status={b.status} />
+            </TouchableOpacity>
+          ))}
+        </Card>
+      </View>
+
+      {/* ── Open requests near you ── */}
+      <View style={{ marginTop: 22 }}>
+        <SectionLabel label="Open requests near you" action="See all" onAction={() => navigation.navigate('Requests')} />
+        {v.nearby.length === 0 ? (
+          <Card><Text style={TYPE.body}>No new open requests right now. Families post new ones every day.</Text></Card>
+        ) : v.nearby.map(({ r, d }) => (
+          <JobCard key={r.id} request={r} distance={d} applied={applied.has(r.id)}
+            onApply={(req) => navigation.navigate('ApplyToRequest', { request: req, defaultRate: p.hourly_rate })} />
+        ))}
+      </View>
+    </ScrollView>
   );
 }
 
 const s = StyleSheet.create({
-  header:       { paddingTop: 56, paddingBottom: 28, paddingHorizontal: 20 },
-  headerTop:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 },
-  greeting:     { fontSize: 20, fontWeight: '800', color: '#fff' },
-  subGreeting:  { fontSize: 12, color: 'rgba(255,255,255,0.75)', marginTop: 2 },
-  availRow:     { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  statsRow:     { flexDirection: 'row', backgroundColor: 'rgba(255,255,255,0.15)', borderRadius: RADIUS.lg, padding: 14 },
-  statPill:     { flex: 1, alignItems: 'center' },
-  statNum:      { fontSize: 20, fontWeight: '800', color: '#fff' },
-  statLbl:      { fontSize: 10, color: 'rgba(255,255,255,0.75)', marginTop: 3, textAlign: 'center' },
-  statDivider:  { width: 1, backgroundColor: 'rgba(255,255,255,0.25)', marginVertical: 4 },
-  sessionCard:  { borderRadius: RADIUS.lg, overflow: 'hidden', marginHorizontal: 0, marginBottom: 16 },
-  sessionGrad:  { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 16 },
-  sessionDot:   { width: 10, height: 10, borderRadius: 5, backgroundColor: '#4ADE80', flexShrink: 0 },
-  sessionActions:{ padding: 12, backgroundColor: C.card },
-  sectionRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  seeAll:       { fontSize: 13, fontWeight: '600', color: C.primary },
-  bookingRow:   { backgroundColor: C.card, borderRadius: RADIUS.lg, overflow: 'hidden', marginBottom: 10, flexDirection: 'row' },
-  statusBar:    { width: 4 },
-  bookingBody:  { flex: 1, flexDirection: 'row', alignItems: 'center', padding: 14 },
+  greetRow:   { flexDirection: 'row', alignItems: 'center', marginBottom: 18 },
+  greetSmall: { fontSize: 13, fontWeight: '700', color: C.primary },
+  greet:      { fontSize: 24, fontWeight: '800', color: C.text, letterSpacing: -0.4, marginTop: 2 },
+  availCard:  { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  dot:        { width: 10, height: 10, borderRadius: 5 },
+  setup:      { marginTop: 14, backgroundColor: C.primaryXLight, borderColor: C.primaryLight },
+  stepRow:    { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  liveCard:   { marginBottom: 10 },
+  liveTop:    { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  stats:      { flexDirection: 'row', gap: 10, marginTop: 18 },
+  row:        { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 14 },
+  divider:    { borderTopWidth: 1, borderTopColor: C.borderLight },
+  time:       { width: 62, fontSize: 13, fontWeight: '800', color: C.primary },
 });

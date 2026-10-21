@@ -22,7 +22,7 @@ export default function ReviewScreen({ route, navigation }) {
         score, comment,
       });
       Alert.alert('Thank you! ⭐', 'Your review helps other patients find great caregivers.', [
-        { text: 'Done', onPress: () => navigation.navigate('Bookings') },
+        { text: 'Done', onPress: () => navigation.navigate('PatientTabs', { screen: 'Bookings' }) },
       ]);
     } catch (err) {
       Alert.alert('Error', err.response?.data?.detail || 'Could not submit review.');
@@ -80,7 +80,7 @@ export default function ReviewScreen({ route, navigation }) {
         </Card>
 
         <Button title="Submit Review" onPress={submit} loading={loading} />
-        <Button title="Skip" variant="ghost" onPress={() => navigation.navigate('Bookings')}
+        <Button title="Skip" variant="ghost" onPress={() => navigation.navigate('PatientTabs', { screen: 'Bookings' })}
           style={{ marginTop: 10, marginBottom: 40 }} />
       </ScrollView>
     </View>

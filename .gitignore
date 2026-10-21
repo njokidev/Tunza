@@ -8,3 +8,20 @@ node_modules/
 .env
 venv/
 .expo/
+
+# Python / Django
+__pycache__/
+*.pyc
+*.sqlite3
+backend/tunza_db
+backend/staticfiles/
+backend/media/
+
+# Local scratch folders
+_backup/
+_to_delete/
+.kilo/
+
+# Build output
+web/dist/
+*.apk
