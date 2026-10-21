@@ -4,7 +4,8 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity,
 import { LinearGradient } from 'expo-linear-gradient';
 import { authApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
-import { Button, Input, COLORS } from '../../components/ui';
+import { Button, Input, PasswordInput, PasswordChecklist, PasswordMatch, COLORS } from '../../components/ui';
+import { passwordChecks } from '../../lib/password';
 import { COLORS as C, GRADIENT, RADIUS, SHADOWS } from '../../theme';
 
 const ROLES = [
@@ -18,14 +19,16 @@ export default function RegisterScreen({ navigation }) {
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const set = (k,v) => setForm(p => ({...p, [k]:v}));
+  const checks     = passwordChecks(form.password, form);
+  const passwordOk = checks.every(c => c.ok);
 
   const validate = () => {
     const e = {};
     if (!form.full_name) e.full_name = 'Required';
     if (!form.email)     e.email     = 'Required';
     if (!form.phone)     e.phone     = 'Required';
-    if (form.password.length < 8) e.password = 'Min 8 characters';
-    if (form.password !== form.password2) e.password2 = 'Passwords do not match';
+    if (!passwordOk) e.password = 'Password doesn\'t meet all the requirements below';
+    if (form.password !== form.password2) e.password2 = 'Passwords don\'t match. Tap the eye to check what you typed';
     setErrors(e);
     return !Object.keys(e).length;
   };
@@ -45,6 +48,7 @@ export default function RegisterScreen({ navigation }) {
       }
     } catch (err) {
       const d = err.response?.data || {};
+      if (d.password) setErrors(p => ({ ...p, password: [].concat(d.password).join(' ') }));
       Alert.alert('Registration Failed', Object.values(d).flat().join('\n') || 'Please try again.');
     } finally { setLoading(false); }
   };
@@ -87,8 +91,14 @@ export default function RegisterScreen({ navigation }) {
             <Input label="Full Name"         placeholder="Jane Njoki"       icon="👤" value={form.full_name} onChangeText={v=>set('full_name',v)} error={errors.full_name} />
             <Input label="Email"             placeholder="jane@example.com" icon="✉" value={form.email}     onChangeText={v=>set('email',v)}     error={errors.email} keyboardType="email-address" autoCapitalize="none" />
             <Input label="Phone Number"      placeholder="0712 345 678"     icon="📱" value={form.phone}     onChangeText={v=>set('phone',v)}     error={errors.phone} keyboardType="phone-pad" />
-            <Input label="Password"          placeholder="Minimum 8 characters" icon="🔒" value={form.password}  onChangeText={v=>set('password',v)}  error={errors.password}  secureTextEntry />
-            <Input label="Confirm Password"  placeholder="Repeat password"  icon="🔒" value={form.password2} onChangeText={v=>set('password2',v)} error={errors.password2} secureTextEntry />
+            <PasswordInput label="Password" placeholder="Minimum 8 characters" icon="🔒" value={form.password}
+              onChangeText={v=>set('password',v)} error={errors.password} textContentType="newPassword">
+              <PasswordChecklist checks={checks} touched={form.password.length > 0} />
+            </PasswordInput>
+            <PasswordInput label="Confirm Password" placeholder="Repeat password" icon="🔒" value={form.password2}
+              onChangeText={v=>set('password2',v)} error={errors.password2} textContentType="newPassword">
+              <PasswordMatch password={form.password} confirm={form.password2} />
+            </PasswordInput>
             <Button title="Create Account" onPress={handleRegister} loading={loading} style={{marginTop:4}} />
           </View>
 

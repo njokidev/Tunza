@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, ActivityIndicator, StyleSheet, Image, ScrollView,
 } from 'react-native';
@@ -73,7 +73,7 @@ export const Button = ({
 // ─────────────────────────────────────────────────────────────────────────────
 // INPUT
 // ─────────────────────────────────────────────────────────────────────────────
-export const Input = ({ label, error, hint, icon, iconName, style, containerStyle, ...props }) => (
+export const Input = ({ label, error, hint, icon, iconName, style, containerStyle, right, children, ...props }) => (
   <View style={[{ marginBottom: 16 }, containerStyle]}>
     {label ? <Text style={s.inputLabel}>{label}</Text> : null}
     <View style={[s.inputWrap, error && s.inputError, props.editable === false && s.inputDisabled]}>
@@ -84,11 +84,61 @@ export const Input = ({ label, error, hint, icon, iconName, style, containerStyl
         placeholderTextColor={COLORS.textFaint}
         {...props}
       />
+      {right}
     </View>
     {error ? <Text style={s.inputErrorTxt}>{error}</Text> : null}
     {hint && !error ? <Text style={s.inputHint}>{hint}</Text> : null}
+    {children}
   </View>
 );
+
+// Password field with a show/hide (eye) toggle. Same props as Input.
+export const PasswordInput = (props) => {
+  const [show, setShow] = useState(false);
+  return (
+    <Input
+      autoCapitalize="none"
+      autoCorrect={false}
+      {...props}
+      secureTextEntry={!show}
+      right={
+        <TouchableOpacity onPress={() => setShow(v => !v)} hitSlop={10} style={{ paddingLeft: 8 }}
+          accessibilityRole="button" accessibilityLabel={show ? 'Hide password' : 'Show password'}>
+          <Feather name={show ? 'eye-off' : 'eye'} size={18} color={COLORS.textFaint} />
+        </TouchableOpacity>
+      }
+    />
+  );
+};
+
+// Live checklist of password rules: grey until typed, then green or red.
+export const PasswordChecklist = ({ checks, touched }) => (
+  <View style={{ marginTop: 8, gap: 4 }}>
+    {checks.map(c => {
+      const color = !touched ? COLORS.textFaint : c.ok ? COLORS.success : COLORS.danger;
+      const name  = !touched ? 'circle' : c.ok ? 'check-circle' : 'x-circle';
+      return (
+        <View key={c.key} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Feather name={name} size={13} color={color} />
+          <Text style={{ fontSize: 12, color }}>{c.label}</Text>
+        </View>
+      );
+    })}
+  </View>
+);
+
+// "Passwords match" / "don't match" line under the confirm field.
+export const PasswordMatch = ({ password, confirm }) => {
+  if (!confirm) return null;
+  const ok = password === confirm;
+  const color = ok ? COLORS.success : COLORS.danger;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 8 }}>
+      <Feather name={ok ? 'check-circle' : 'x-circle'} size={13} color={color} />
+      <Text style={{ fontSize: 12, fontWeight: '600', color }}>{ok ? 'Passwords match' : "Passwords don't match"}</Text>
+    </View>
+  );
+};
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CARD — the standard white container (web: rounded-2xl border shadow-card)

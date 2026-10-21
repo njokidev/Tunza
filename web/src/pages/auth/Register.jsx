@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { Link, Navigate, useNavigate } from 'react-router-dom';
 import { HeartHandshake, Users } from 'lucide-react';
 import AuthShell from './AuthShell';
-import { Alert, Button, Field } from '../../components/ui';
+import { Alert, Button, Field, PasswordChecklist, PasswordInput, PasswordMatch } from '../../components/ui';
+import { passwordChecks } from '../../lib/password';
 import { useAuth, homeFor } from '../../context/AuthContext';
 import { errorMessage } from '../../api/client';
 
@@ -29,6 +30,8 @@ export default function Register() {
 
   if (!booting && user) return <Navigate to={homeFor(user.role)} replace />;
 
+  const checks = passwordChecks(form.password, form);
+  const passwordOk = checks.every((c) => c.ok);
   const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
 
   const submit = async (e) => {
@@ -36,8 +39,8 @@ export default function Register() {
     setError('');
     const phone = normalisePhone(form.phone);
     if (!phone) return setError('Enter a valid Kenyan phone number, e.g. 0712 345 678.');
-    if (form.password.length < 8) return setError('Password must be at least 8 characters.');
-    if (form.password !== form.password2) return setError('Passwords do not match.');
+    if (!passwordOk) return setError('Your password doesn’t meet all the requirements below.');
+    if (form.password !== form.password2) return setError('Passwords don’t match. Use the eye icon to check what you typed.');
     setLoading(true);
     try {
       const me = await register({ ...form, phone });
@@ -86,11 +89,15 @@ export default function Register() {
           </Field>
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Password" hint="At least 8 characters">
-            <input className="input" type="password" required autoComplete="new-password" value={form.password} onChange={set('password')} />
+          <Field label="Password">
+            <PasswordInput required autoComplete="new-password" value={form.password} onChange={set('password')}
+              invalid={form.password && !passwordOk} />
+            <PasswordChecklist checks={checks} touched={form.password.length > 0} />
           </Field>
           <Field label="Confirm password">
-            <input className="input" type="password" required autoComplete="new-password" value={form.password2} onChange={set('password2')} />
+            <PasswordInput required autoComplete="new-password" value={form.password2} onChange={set('password2')}
+              invalid={form.password2 && form.password !== form.password2} />
+            <PasswordMatch password={form.password} confirm={form.password2} />
           </Field>
         </div>
 

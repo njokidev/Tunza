@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff } from 'lucide-react';
 import AuthShell from './AuthShell';
-import { Alert, Button, Field } from '../../components/ui';
+import { Alert, Button, Field, PasswordInput } from '../../components/ui';
 import { useAuth, homeFor } from '../../context/AuthContext';
 import { errorMessage } from '../../api/client';
 
@@ -11,7 +10,6 @@ export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const [form, setForm] = useState({ email: '', password: '' });
-  const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -46,14 +44,8 @@ export default function Login() {
             value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
         </Field>
         <Field label="Password">
-          <div className="relative">
-            <input className="input pr-11" type={show ? 'text' : 'password'} autoComplete="current-password" required
-              value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-            <button type="button" onClick={() => setShow(!show)} className="absolute inset-y-0 right-0 px-3 text-gray-400 hover:text-gray-600"
-              aria-label={show ? 'Hide password' : 'Show password'}>
-              {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </button>
-          </div>
+          <PasswordInput autoComplete="current-password" required
+            value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
         </Field>
         <Button type="submit" size="lg" className="w-full" loading={loading}>Log in</Button>
       </form>

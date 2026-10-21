@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity,
   KeyboardAvoidingView, Platform, Alert, StatusBar } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useAuth } from '../../context/AuthContext';
-import { Button, Input, COLORS } from '../../components/ui';
+import { Button, Input, PasswordInput, COLORS } from '../../components/ui';
 import { COLORS as C, GRADIENT, RADIUS, SHADOWS, TYPE } from '../../theme';
 
 export default function LoginScreen({ navigation }) {
@@ -60,11 +60,10 @@ export default function LoginScreen({ navigation }) {
             onChangeText={v => setForm(p => ({...p, email:v}))}
             error={errors.email}
           />
-          <Input
+          <PasswordInput
             label="Password"
             placeholder="Enter your password"
             icon="🔒"
-            secureTextEntry
             value={form.password}
             onChangeText={v => setForm(p => ({...p, password:v}))}
             error={errors.password}

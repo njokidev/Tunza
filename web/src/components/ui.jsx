@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AlertCircle, BadgeCheck, CheckCircle2, Loader2, Star, X } from 'lucide-react';
+import { AlertCircle, BadgeCheck, CheckCircle2, Circle, Eye, EyeOff, Loader2, Star, X, XCircle } from 'lucide-react';
 import { initials } from '../lib/format';
 
 const VARIANTS = {
@@ -56,6 +56,59 @@ export function Field({ label, hint, error, children, className = '' }) {
       {hint && !error && <span className="mt-1 block text-xs text-gray-500">{hint}</span>}
       {error && <span className="mt-1 block text-xs font-medium text-red-600">{error}</span>}
     </label>
+  );
+}
+
+/** Password input with a show/hide (eye) toggle. Extra props go to the <input>. */
+export function PasswordInput({ className = '', invalid, ...rest }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        {...rest}
+        type={show ? 'text' : 'password'}
+        className={`input pr-11 ${invalid ? 'border-red-300 focus:border-red-400 focus:ring-red-100' : ''} ${className}`}
+      />
+      <button
+        type="button"
+        onClick={() => setShow(!show)}
+        className="absolute inset-y-0 right-0 px-3 text-gray-400 hover:text-gray-600"
+        aria-label={show ? 'Hide password' : 'Show password'}
+      >
+        {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+      </button>
+    </div>
+  );
+}
+
+/** Live checklist of password rules: grey until typed, then green or red. */
+export function PasswordChecklist({ checks, touched }) {
+  return (
+    <ul className="mt-2 space-y-1" aria-live="polite">
+      {checks.map((c) => {
+        const Icon = !touched ? Circle : c.ok ? CheckCircle2 : XCircle;
+        const tone = !touched ? 'text-gray-400' : c.ok ? 'text-emerald-600' : 'text-red-600';
+        return (
+          <li key={c.key} className={`flex items-center gap-1.5 text-xs ${tone}`}>
+            <Icon className="h-3.5 w-3.5 shrink-0" />
+            <span>{c.label}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** "Passwords match" / "don't match" line under the confirm field. */
+export function PasswordMatch({ password, confirm }) {
+  if (!confirm) return null;
+  const ok = password === confirm;
+  const Icon = ok ? CheckCircle2 : XCircle;
+  return (
+    <p className={`mt-2 flex items-center gap-1.5 text-xs font-medium ${ok ? 'text-emerald-600' : 'text-red-600'}`} aria-live="polite">
+      <Icon className="h-3.5 w-3.5 shrink-0" />
+      {ok ? 'Passwords match' : "Passwords don't match"}
+    </p>
   );
 }
 
