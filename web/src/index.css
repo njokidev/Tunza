@@ -1,0 +1,20 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { -webkit-tap-highlight-color: transparent; }
+  body { @apply bg-[#FAF8FD] text-gray-900 antialiased; }
+}
+
+@layer components {
+  .input {
+    @apply w-full rounded-xl border border-gray-200 bg-white px-3.5 py-2.5 text-sm text-gray-900
+      placeholder:text-gray-400 transition focus:border-brand-500 focus:outline-none focus:ring-4 focus:ring-brand-100;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border px-3.5 py-2 text-sm font-medium transition cursor-pointer select-none;
+  }
+  .chip-on { @apply border-brand-700 bg-brand-700 text-white; }
+  .chip-off { @apply border-gray-200 bg-white text-gray-700 hover:border-brand-300 hover:bg-brand-50; }
+}
