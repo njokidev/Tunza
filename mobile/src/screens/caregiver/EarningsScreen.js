@@ -1,114 +1,117 @@
-import React, { useCallback, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, FlatList, RefreshControl } from 'react-native';
+import React, { useCallback, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, RefreshControl } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Feather } from '@expo/vector-icons';
 import { useFocusEffect } from '@react-navigation/native';
-import { bookingApi } from '../../api';
-import { Card, Empty, LoadingScreen, Notice, ScreenHeader, StatCard } from '../../components/ui';
+import { paymentApi } from '../../api';
+import { Card, LoadingScreen, Notice, ScreenHeader, Segmented, StatCard } from '../../components/ui';
 import { COLORS as C, GRADIENT, RADIUS, TYPE } from '../../theme';
-import { careTypeLabel, caregiverNet, errorMessage, fmtDate, kes, platformFee, unwrap } from '../../lib/format';
-
-const sum = (list, f) => list.reduce((acc, b) => acc + f(b), 0);
+import { errorMessage, fmtDate, fmtPhone, fmtTime, kes } from '../../lib/format';
 
 /**
- * Earnings, computed from completed bookings (web: shared/Wallet.jsx, caregiver view).
- * Ending a visit marks it paid; Tunza keeps 12.5%.
+ * Wallet (web: shared/Wallet.jsx, caregiver view). Worked out on the server:
+ * available to pay out, on hold for a day after each visit, upcoming, and
+ * everything Tunza has sent by M-Pesa. Amounts are after the 12.5% fee.
  */
 export default function EarningsScreen({ navigation }) {
-  const [list, setList] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [w, setW] = useState(null);
+  const [tab, setTab] = useState('available');
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
   const load = useCallback(async () => {
     try {
-      const { data } = await bookingApi.list();
-      setList(unwrap(data));
+      const { data } = await paymentApi.wallet();
+      setW(data);
       setError('');
     } catch (e) {
       setError(errorMessage(e));
     } finally {
-      setLoading(false);
       setRefreshing(false);
     }
   }, []);
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
-  const s = useMemo(() => {
-    const completed = list.filter((b) => b.status === 'completed').sort((a, b) => new Date(b.end_date) - new Date(a.end_date));
-    const committed = list.filter((b) => ['accepted', 'ongoing'].includes(b.status));
-    const now = new Date();
-    const thisMonth = completed.filter((b) => {
-      const d = new Date(b.end_date);
-      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    });
-    return {
-      completed,
-      net: sum(completed, (b) => caregiverNet(b.total_amount)),
-      fees: sum(completed, (b) => platformFee(b.total_amount)),
-      committedNet: sum(committed, (b) => caregiverNet(b.total_amount)),
-      monthNet: sum(thisMonth, (b) => caregiverNet(b.total_amount)),
-    };
-  }, [list]);
+  if (!w && !error) return <LoadingScreen />;
 
-  if (loading) return <LoadingScreen />;
+  const rows = !w ? [] : tab === 'available' ? w.available_visits : tab === 'hold' ? w.on_hold_visits : w.payouts;
 
   return (
-    <FlatList
-      style={{ flex: 1, backgroundColor: C.bg }}
-      data={s.completed}
-      keyExtractor={(b) => String(b.id)}
-      contentContainerStyle={{ paddingBottom: 32 }}
-      showsVerticalScrollIndicator={false}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={[C.primary]} tintColor={C.primary} />}
-      ListHeaderComponent={
-        <View style={{ paddingHorizontal: 20 }}>
-          <View style={{ marginHorizontal: -20 }}>
-            <ScreenHeader title="Earnings" subtitle="What you've earned on Tunza, after the 12.5% platform fee."
-              onBack={navigation.canGoBack() ? () => navigation.goBack() : undefined} />
-          </View>
-          {error ? <Notice style={{ marginBottom: 12 }}>{error}</Notice> : null}
-          <LinearGradient colors={GRADIENT.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={st.hero}>
-            <View style={st.glow} />
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Feather name="credit-card" size={14} color="#D6C0F0" />
-              <Text style={st.heroLbl}>Total earned</Text>
+    <ScrollView style={{ flex: 1, backgroundColor: C.bg }} contentContainerStyle={{ paddingBottom: 32 }} showsVerticalScrollIndicator={false}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} colors={[C.primary]} tintColor={C.primary} />}>
+      <ScreenHeader title="Wallet" subtitle="Your earnings after Tunza's 12.5% fee."
+        onBack={navigation.canGoBack() ? () => navigation.goBack() : undefined} />
+      <View style={{ paddingHorizontal: 20 }}>
+        {error ? <Notice style={{ marginBottom: 12 }}>{error}</Notice> : null}
+        {w ? (
+          <>
+            <LinearGradient colors={GRADIENT.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={st.hero}>
+              <View style={st.glow} />
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Feather name="credit-card" size={14} color="#D6C0F0" />
+                <Text style={st.heroLbl}>Available for payout</Text>
+              </View>
+              <Text style={st.heroAmt}>{kes(w.available)}</Text>
+              <Text style={st.heroSub}>
+                {w.payout_number ? `Paid to M-Pesa ${fmtPhone(w.payout_number)}` : 'Add an M-Pesa payout number on your profile'}
+              </Text>
+            </LinearGradient>
+
+            <View style={st.stats}>
+              <StatCard iconName="lock" tone="amber" label="On hold" value={kes(w.on_hold)} sub={`for ${w.hold_hours} h after a visit`} />
+              <StatCard iconName="clock" tone="sky" label="Upcoming" value={kes(w.upcoming)} sub={`${w.upcoming_count} confirmed visit${w.upcoming_count === 1 ? '' : 's'}`} />
             </View>
-            <Text style={st.heroAmt}>{kes(s.net)}</Text>
-            <Text style={st.heroSub}>{s.completed.length} completed visit{s.completed.length === 1 ? '' : 's'}</Text>
-          </LinearGradient>
-          <View style={st.stats}>
-            <StatCard iconName="calendar" tone="green" label="This month" value={kes(s.monthNet)} />
-            <StatCard iconName="clock" tone="sky" label="Upcoming" value={kes(s.committedNet)} sub="confirmed visits" />
-          </View>
-          <View style={[st.stats, { marginTop: 10 }]}>
-            <StatCard iconName="percent" tone="amber" label="Platform fees" value={kes(s.fees)} sub="12.5% per visit" />
-          </View>
-          <Text style={[TYPE.h3, { marginTop: 22, marginBottom: 10 }]}>Completed visits</Text>
-        </View>
-      }
-      renderItem={({ item: b }) => (
-        <View style={{ paddingHorizontal: 20 }}>
-          <Card style={st.row}>
-            <View style={st.icon}><Feather name="arrow-down-left" size={18} color={C.success} /></View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={TYPE.h4} numberOfLines={1}>{b.patient?.full_name}</Text>
-              <Text style={TYPE.caption}>{careTypeLabel(b.care_type)} · {fmtDate(b.end_date)}</Text>
+            <View style={[st.stats, { marginTop: 10 }]}>
+              <StatCard iconName="calendar" tone="green" label="This month" value={kes(w.this_month)} />
+              <StatCard iconName="send" tone="brand" label="Paid out" value={kes(w.paid_out)} sub="all time" />
             </View>
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={st.amt}>+{kes(caregiverNet(b.total_amount))}</Text>
-              <Text style={TYPE.micro}>of {kes(b.total_amount)}</Text>
+
+            <Notice kind="info" style={{ marginTop: 14 }}>
+              {`Earnings stay on hold for ${w.hold_hours} hours after a visit in case the family raises a problem, then become available. Tunza sends available money to your M-Pesa.`}
+            </Notice>
+
+            <Segmented value={tab} onChange={setTab} style={{ marginTop: 18 }}
+              tabs={[
+                { value: 'available', label: 'Available', count: w.available_visits.length },
+                { value: 'hold', label: 'On hold', count: w.on_hold_visits.length },
+                { value: 'payouts', label: 'Payouts', count: w.payouts.length },
+              ]} />
+
+            <View style={{ marginTop: 12 }}>
+              {rows.length === 0 ? (
+                <Card><Text style={TYPE.body}>
+                  {tab === 'payouts' ? 'No payouts yet.' : tab === 'hold' ? 'Nothing on hold right now.' : 'Nothing waiting to be paid out.'}
+                </Text></Card>
+              ) : tab === 'payouts' ? rows.map((p) => (
+                <Card key={p.id} style={st.row}>
+                  <View style={[st.icon, { backgroundColor: C.primaryXLight }]}><Feather name="send" size={17} color={C.primary} /></View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={TYPE.h4}>M-Pesa {p.mpesa_reference}</Text>
+                    <Text style={TYPE.caption}>{fmtDate(p.created_at)} · {p.visits} visit{p.visits === 1 ? '' : 's'} · to {fmtPhone(p.phone)}</Text>
+                  </View>
+                  <Text style={[st.amt, { color: C.primary }]}>{kes(p.amount)}</Text>
+                </Card>
+              )) : rows.map((v) => (
+                <Card key={v.booking_id} style={st.row}>
+                  <View style={st.icon}><Feather name={tab === 'hold' ? 'lock' : 'arrow-down-left'} size={17} color={tab === 'hold' ? C.warning : C.success} /></View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <Text style={TYPE.h4} numberOfLines={1}>Visit for {v.family}</Text>
+                    <Text style={TYPE.caption}>
+                      {fmtDate(v.date)}{tab === 'hold' && v.available_at ? ` · available ${fmtDate(v.available_at)}, ${fmtTime(v.available_at)}` : ''}
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: 'flex-end' }}>
+                    <Text style={st.amt}>+{kes(v.net)}</Text>
+                    <Text style={TYPE.micro}>of {kes(v.gross)}</Text>
+                  </View>
+                </Card>
+              ))}
             </View>
-          </Card>
-        </View>
-      )}
-      ListEmptyComponent={
-        <View style={{ paddingHorizontal: 20 }}>
-          <Empty iconName="credit-card" title="No earnings yet" subtitle="When you end a visit, the payment shows up here." />
-        </View>
-      }
-    />
+          </>
+        ) : null}
+      </View>
+    </ScrollView>
   );
 }
 

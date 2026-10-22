@@ -15,9 +15,13 @@ from caregivers.models import CaregiverProfile
 from payments.models import Payout
 
 
+_phones = iter(range(254700000001, 254799999999))
+
+
 def make_user(email, role, verified=False):
+    # every account needs its own phone number now (unique, 2547XXXXXXXX)
     return User.objects.create_user(email=email, password='pass12345', full_name=email.split('@')[0],
-                                    role=role, is_verified=verified, phone='254712345678')
+                                    role=role, is_verified=verified, phone=str(next(_phones)), phone_verified=True)
 
 
 class AdminApiTests(APITestCase):
@@ -28,7 +32,7 @@ class AdminApiTests(APITestCase):
         self.newbie = make_user('newbie@t.ke', 'caregiver')
         self.cp = CaregiverProfile.objects.create(user=self.carer, hourly_rate=Decimal('500'))
         CaregiverProfile.objects.create(user=self.newbie)
-        start = timezone.now() - timedelta(days=1)
+        start = timezone.now() - timedelta(days=2)  # past the 24 h earnings hold
         self.done = [Booking.objects.create(
             patient=self.family, caregiver=self.cp, care_type='daycare', status='completed', is_paid=True,
             start_date=start, end_date=start + timedelta(hours=4), address='Kilimani', total_amount=Decimal('2000'),

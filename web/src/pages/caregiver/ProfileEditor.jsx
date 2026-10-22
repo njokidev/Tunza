@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { authApi, caregiverApi, unwrap } from '../../api/endpoints';
 import { errorMessage } from '../../api/client';
 import { useAsync } from '../../lib/useAsync';
-import { DAYS_LONG, EXPERIENCE_LEVELS } from '../../lib/constants';
+import { AREAS, DAYS_LONG, EXPERIENCE_LEVELS, LANGUAGES } from '../../lib/constants';
 import { fmtShortTime, kes } from '../../lib/format';
 import { Alert, Avatar, Button, Card, Field, PageHeader, PageLoader, VerifiedBadge } from '../../components/ui';
 import AreaPicker from '../../components/AreaPicker';
@@ -42,6 +42,12 @@ export default function ProfileEditor() {
       latitude: p.latitude,
       longitude: p.longitude,
       specialization_ids: (p.specializations ?? []).map((s) => s.id),
+      work_areas: p.work_areas?.length ? p.work_areas : (p.location_name ? [p.location_name] : []),
+      languages: p.languages ?? [],
+      gender: p.gender ?? '',
+      day_shift_rate: p.day_shift_rate ? Math.round(Number(p.day_shift_rate)) : '',
+      night_shift_rate: p.night_shift_rate ? Math.round(Number(p.night_shift_rate)) : '',
+      payout_phone: p.payout_phone ?? '',
     });
   }, [data]);
 
@@ -66,6 +72,8 @@ export default function ProfileEditor() {
         years_exp: years,
         experience: levelFor(years),
         hourly_rate: Number(form.hourly_rate) || 0,
+        day_shift_rate: Number(form.day_shift_rate) || null,
+        night_shift_rate: Number(form.night_shift_rate) || null,
       };
       if (!payload.id_number) delete payload.id_number;
       await caregiverApi.updateMe(payload);
@@ -147,9 +155,55 @@ export default function ProfileEditor() {
               </div>
             )}
           </div>
-          <Field label="Area you work from" hint="Used to match you with nearby families.">
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="12-hour day price (KES)" hint="Optional — used instead of hourly for full days">
+              <input type="number" min={0} step={100} className="input" value={form.day_shift_rate} onChange={(e) => set({ day_shift_rate: e.target.value })} />
+            </Field>
+            <Field label="Overnight price (KES)" hint="Optional — used for overnight care">
+              <input type="number" min={0} step={100} className="input" value={form.night_shift_rate} onChange={(e) => set({ night_shift_rate: e.target.value })} />
+            </Field>
+          </div>
+          <Field label="Area you work from" hint="Used to measure distance to families.">
             <AreaPicker value={form} onChange={(loc) => set(loc)} />
           </Field>
+          <div>
+            <div className="mb-2 text-sm font-semibold text-gray-800">All areas you'll take jobs in</div>
+            <div className="flex flex-wrap gap-2">
+              {AREAS.map((a) => {
+                const on = form.work_areas.some((w) => w.toLowerCase() === a.name.toLowerCase());
+                return (
+                  <button key={a.name} type="button" className={`chip ${on ? 'chip-on' : 'chip-off'}`}
+                    onClick={() => set({ work_areas: on ? form.work_areas.filter((w) => w.toLowerCase() !== a.name.toLowerCase()) : [...form.work_areas, a.name] })}>
+                    {on && <Check className="h-3.5 w-3.5" />}{a.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div>
+            <div className="mb-2 text-sm font-semibold text-gray-800">Languages you speak</div>
+            <div className="flex flex-wrap gap-2">
+              {LANGUAGES.map((l) => {
+                const on = form.languages.includes(l);
+                return (
+                  <button key={l} type="button" className={`chip ${on ? 'chip-on' : 'chip-off'}`}
+                    onClick={() => set({ languages: on ? form.languages.filter((x) => x !== l) : [...form.languages, l] })}>
+                    {on && <Check className="h-3.5 w-3.5" />}{l}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="Gender" hint="Some families ask for a caregiver of a particular gender.">
+              <select className="input" value={form.gender} onChange={(e) => set({ gender: e.target.value })}>
+                <option value="">Prefer not to say</option><option value="female">Female</option><option value="male">Male</option>
+              </select>
+            </Field>
+            <Field label="M-Pesa payout number" hint={form.payout_phone ? 'Earnings go to this number.' : 'Leave empty to be paid on your account phone.'}>
+              <input className="input" type="tel" placeholder={account.phone || '0712 345 678'} value={form.payout_phone} onChange={(e) => set({ payout_phone: e.target.value })} />
+            </Field>
+          </div>
           <label className="flex items-center gap-3 text-sm font-medium">
             <input type="checkbox" className="h-4 w-4 rounded accent-brand-700" checked={form.is_available} onChange={(e) => set({ is_available: e.target.checked })} />
             I'm taking new clients

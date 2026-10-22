@@ -131,3 +131,16 @@ export const withDistance = (requests, profile) => {
     })
     .sort((a, b) => (isOpen(b.r) - isOpen(a.r)) || (b.inArea - a.inArea) || ((a.d ?? 1e9) - (b.d ?? 1e9)));
 };
+
+/** Kenyan mobile → 2547XXXXXXXX, or null (same rules as backend accounts/phone.py). */
+export function normalizePhone(raw) {
+  const d = String(raw ?? '').replace(/\D/g, '');
+  let n = null;
+  if (d.startsWith('254')) n = d;
+  else if (d.startsWith('0') && d.length === 10) n = `254${d.slice(1)}`;
+  else if (d.length === 9 && /^[71]/.test(d)) n = `254${d}`;
+  return n && /^254[71]\d{8}$/.test(n) ? n : null;
+}
+
+/** 254712345678 → 0712 345 678 */
+export const fmtPhone = (n) => (n && n.length === 12 ? `0${n.slice(3, 6)} ${n.slice(6, 9)} ${n.slice(9)}` : n || '');

@@ -2,6 +2,21 @@
 // both clients send the backend exactly the same values.
 
 export const COMMISSION_RATE = 0.125; // Tunza platform fee
+
+// Terms of Service / Privacy Policy pages live on the web app.
+export const WEB_URL = (process.env.EXPO_PUBLIC_WEB_URL || 'https://tunza-web.onrender.com').replace(/\/$/, '');
+export const TERMS_URL = `${WEB_URL}/terms`;
+export const PRIVACY_URL = `${WEB_URL}/privacy`;
+
+export const LANGUAGES = ['English', 'Kiswahili', 'Kikuyu', 'Luo', 'Luhya', 'Kalenjin', 'Kamba', 'Kisii', 'Meru', 'Somali'];
+
+// Family onboarding: who is the care for?
+export const RELATIONSHIPS = ['Mother', 'Father', 'Grandparent', 'Spouse', 'Child', 'Sibling', 'Relative', 'Friend', 'Other'];
+export const AGE_GROUPS = [
+  { value: 'child',   label: 'Child',   sub: 'Under 18' },
+  { value: 'adult',   label: 'Adult',   sub: '18–64' },
+  { value: 'elderly', label: 'Elderly', sub: '65+' },
+];
 export const TAGLINE = 'Quality care, at your doorstep';
 
 // Matches CareRequest.CareRecipient in the backend.

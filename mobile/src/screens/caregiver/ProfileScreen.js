@@ -9,8 +9,8 @@ import { Avatar, Button, Card, Chip, Input, LoadingScreen, Notice, ScreenHeader,
 import { WorkAreasPicker } from '../../components/pickers';
 import WeekAvailability, { slotsFromWeek, weekFromSlots } from '../../components/WeekAvailability';
 import { COLORS as C, RADIUS, SHADOWS, TYPE } from '../../theme';
-import { AREAS, VERIFICATION_STATUS, isNurseOnly } from '../../lib/constants';
-import { errorMessage, unwrap } from '../../lib/format';
+import { AREAS, LANGUAGES, VERIFICATION_STATUS, isNurseOnly } from '../../lib/constants';
+import { errorMessage, fmtPhone, normalizePhone, unwrap } from '../../lib/format';
 
 const levelFor = (years) => (years >= 5 ? 'senior' : years >= 2 ? 'mid' : 'junior');
 
@@ -18,7 +18,7 @@ const levelFor = (years) => (years >= 5 ? 'senior' : years >= 2 ? 'mid' : 'junio
 export default function CaregiverProfileScreen({ navigation }) {
   const { user, updateUser, logout } = useAuth();
   const [form, setForm] = useState(null);
-  const [account, setAccount] = useState({ full_name: user?.full_name ?? '', phone: user?.phone ?? '' });
+  const [account, setAccount] = useState({ full_name: user?.full_name ?? '', phone: fmtPhone(user?.phone) });
   const [specs, setSpecs] = useState([]);
   const [week, setWeek] = useState(weekFromSlots([]));
   const [savedWeek, setSavedWeek] = useState('');
@@ -40,6 +40,11 @@ export default function CaregiverProfileScreen({ navigation }) {
         hourly_rate: String(Math.round(Number(prof.hourly_rate ?? 500))),
         is_available: prof.is_available ?? true,
         work_areas: prof.work_areas?.length ? prof.work_areas : (prof.location_name ? [prof.location_name] : []),
+        languages: prof.languages ?? [],
+        gender: prof.gender ?? '',
+        day_shift_rate: prof.day_shift_rate ? String(Math.round(Number(prof.day_shift_rate))) : '',
+        night_shift_rate: prof.night_shift_rate ? String(Math.round(Number(prof.night_shift_rate))) : '',
+        payout_phone: prof.payout_phone ? fmtPhone(prof.payout_phone) : '',
         specialization_ids: (prof.specializations ?? []).map((s) => s.id),
       });
       setVerification({ status: prof.verification_status ?? 'not_submitted', nurse: !!prof.nurse_verified });
@@ -87,8 +92,14 @@ export default function CaregiverProfileScreen({ navigation }) {
         const sp = specs.find((x) => x.id === id);
         return verification.nurse || !sp || !isNurseOnly(sp.name);
       });
+      if (form.payout_phone && !normalizePhone(form.payout_phone)) {
+        throw { response: { data: { detail: 'Payout number: enter a Kenyan M-Pesa number, e.g. 0712 345 678.' } } };
+      }
       const payload = {
-        ...form, specialization_ids: specIds, years_exp: years, experience: levelFor(years), hourly_rate: Number(form.hourly_rate) || 0,
+        ...form, specialization_ids: specIds,
+        day_shift_rate: Number(form.day_shift_rate) || null,
+        night_shift_rate: Number(form.night_shift_rate) || null,
+        payout_phone: form.payout_phone ? normalizePhone(form.payout_phone) : '', years_exp: years, experience: levelFor(years), hourly_rate: Number(form.hourly_rate) || 0,
         location_name: form.work_areas[0] ?? '',
         ...(base ? { latitude: base.lat, longitude: base.lng } : {}),
       };
@@ -99,8 +110,10 @@ export default function CaregiverProfileScreen({ navigation }) {
         setWeek(w);
         setSavedWeek(JSON.stringify(w));
       }
-      if (account.full_name !== user.full_name || account.phone !== (user.phone ?? '')) {
-        const { data: me } = await authApi.updateMe(account);
+      const phone = normalizePhone(account.phone);
+      if (account.full_name !== user.full_name || phone !== (user.phone ?? null)) {
+        if (!phone) throw { response: { data: { detail: 'Phone: enter a Kenyan mobile number, e.g. 0712 345 678.' } } };
+        const { data: me } = await authApi.updateMe({ full_name: account.full_name, phone });
         updateUser(me);
       }
       setStatus({ kind: 'success', text: 'Profile saved. Families see your changes right away.' });
@@ -167,6 +180,32 @@ export default function CaregiverProfileScreen({ navigation }) {
                 onChangeText={(t) => set({ years_exp: t.replace(/\D/g, '') })} containerStyle={{ flex: 1, marginBottom: 0 }} />
             </View>
             <Text style={[TYPE.caption, { marginTop: 8 }]}>Most Nairobi caregivers charge KES 400–1,000 per hour.</Text>
+            <Text style={[s.sub, { marginTop: 16 }]}>Shift prices <Text style={TYPE.caption}>(optional)</Text></Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <Input label="12-hour day (KES)" keyboardType="number-pad" value={form.day_shift_rate} placeholder="e.g. 3500"
+                onChangeText={(t) => set({ day_shift_rate: t.replace(/\D/g, '') })} containerStyle={{ flex: 1, marginBottom: 0 }} />
+              <Input label="Overnight (KES)" keyboardType="number-pad" value={form.night_shift_rate} placeholder="e.g. 3000"
+                onChangeText={(t) => set({ night_shift_rate: t.replace(/\D/g, '') })} containerStyle={{ flex: 1, marginBottom: 0 }} />
+            </View>
+            <Text style={[TYPE.caption, { marginTop: 8 }]}>Used instead of the hourly rate for full-day and overnight bookings.</Text>
+          </Card>
+
+          {/* Languages & gender */}
+          <Card>
+            <Text style={s.h}>Languages you speak</Text>
+            <View style={s.wrap}>
+              {LANGUAGES.map((l) => (
+                <Chip key={l} label={l} active={form.languages.includes(l)}
+                  onPress={() => set({ languages: form.languages.includes(l) ? form.languages.filter((x) => x !== l) : [...form.languages, l] })} />
+              ))}
+            </View>
+            <Text style={[s.sub, { marginTop: 16 }]}>Gender</Text>
+            <View style={s.wrap}>
+              {[['female', 'Female'], ['male', 'Male']].map(([v, l]) => (
+                <Chip key={v} label={l} active={form.gender === v} onPress={() => set({ gender: form.gender === v ? '' : v })} />
+              ))}
+            </View>
+            <Text style={[TYPE.caption, { marginTop: 8 }]}>Some families ask for a caregiver of a particular gender or language.</Text>
           </Card>
 
           {/* Areas */}
@@ -194,6 +233,15 @@ export default function CaregiverProfileScreen({ navigation }) {
 
           {/* Availability */}
           <WeekAvailability week={week} onChange={setWeek} />
+
+          {/* Payouts */}
+          <Card>
+            <Text style={s.h}>M-Pesa payout number</Text>
+            <Input value={form.payout_phone} keyboardType="phone-pad" placeholder={fmtPhone(user?.phone) || '0712 345 678'}
+              onChangeText={(payout_phone) => set({ payout_phone })} iconName="smartphone"
+              hint={form.payout_phone ? 'Tunza sends your earnings to this number.' : `Leave empty to be paid on your account phone (${fmtPhone(user?.phone)}).`}
+              containerStyle={{ marginBottom: 0 }} />
+          </Card>
 
           {user?.is_verified ? (
             <TouchableOpacity onPress={() => navigation.navigate('Verification')} style={s.linkRow}>
@@ -248,6 +296,7 @@ const s = StyleSheet.create({
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   h:         { fontSize: 15, fontWeight: '800', color: C.text, marginBottom: 12 },
   wrap:      { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  sub:       { fontSize: 13, fontWeight: '800', color: C.text, marginBottom: 10 },
   linkRow:   { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.card, borderRadius: RADIUS.lg, padding: 16, borderWidth: 1, borderColor: C.borderLight },
   bar:       { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 20, paddingVertical: 12, backgroundColor: C.card, borderTopWidth: 1, borderTopColor: C.borderLight, ...SHADOWS.lg },
 });

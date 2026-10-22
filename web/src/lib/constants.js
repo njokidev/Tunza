@@ -103,3 +103,5 @@ export const REQUEST_STATUS = {
   closed: { label: 'Closed', className: 'bg-gray-100 text-gray-600 ring-gray-200' },
   cancelled: { label: 'Cancelled', className: 'bg-gray-100 text-gray-600 ring-gray-200' },
 };
+
+export const LANGUAGES = ['English', 'Kiswahili', 'Kikuyu', 'Luo', 'Luhya', 'Kalenjin', 'Kamba', 'Kisii', 'Meru', 'Somali'];

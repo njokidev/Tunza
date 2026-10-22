@@ -94,6 +94,18 @@ export const authApi = {
   updateMe: (data)  => api.patch('/auth/me/', data),
   notifications: () => api.get('/auth/notifications/'),
   markRead: (id)    => api.patch(`/auth/notifications/${id}/read/`),
+  // Phone OTP (Africa's Talking). In local dev the response carries `dev_code`.
+  sendPhoneCode: ()     => api.post('/auth/phone/send-code/'),
+  verifyPhone:   (code) => api.post('/auth/phone/verify/', { code }),
+  // Forgot password: identifier = phone or email
+  resetRequest:  (identifier) => api.post('/auth/password/reset/', { identifier }),
+  resetConfirm:  (data) => api.post('/auth/password/reset/confirm/', data),
+  completeOnboarding: () => api.post('/auth/onboarding/complete/'),
+  // Who the family books care for
+  recipients:      ()         => api.get('/auth/recipients/'),
+  addRecipient:    (data)     => api.post('/auth/recipients/', data),
+  updateRecipient: (id, data) => api.patch(`/auth/recipients/${id}/`, data),
+  deleteRecipient: (id)       => api.delete(`/auth/recipients/${id}/`),
 };
 
 // ── Caregivers ────────────────────────────────────────────────────────────────
@@ -127,7 +139,8 @@ export const bookingApi = {
   detail:       (id)        => api.get(`/bookings/${id}/`),
   updateStatus: (id, data)  => api.patch(`/bookings/${id}/status/`, data),
   // caregiver: accepted | rejected | ongoing | completed — patient: cancelled
-  setStatus:    (id, status) => api.patch(`/bookings/${id}/status/`, { status }),
+  // extra: { latitude, longitude } for GPS check-in / check-out, { reason } when declining
+  setStatus:    (id, status, extra = {}) => api.patch(`/bookings/${id}/status/`, { status, ...extra }),
 };
 
 // ── Messaging ─────────────────────────────────────────────────────────────────
@@ -142,12 +155,14 @@ export const messageApi = {
 export const ratingApi = {
   list:   (caregiverId) => api.get('/ratings/', { params: { caregiver: caregiverId } }),
   create: (data)        => api.post('/ratings/', data),
+  rateFamily: (data)    => api.post('/ratings/family/', data),   // caregiver → family
 };
 
 // ── Payments ──────────────────────────────────────────────────────────────────
 export const paymentApi = {
   initiate: (data)      => api.post('/payments/initiate/', data),
   status:   (bookingId) => api.get(`/payments/status/${bookingId}/`),
+  wallet:   ()          => api.get('/payments/wallet/'),
 };
 
 // ── Locations ─────────────────────────────────────────────────────────────────

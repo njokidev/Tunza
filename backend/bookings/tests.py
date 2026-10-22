@@ -15,9 +15,13 @@ from care_requests.models import CareRequest, CareMatch, CareApplication
 from bookings.models import Booking
 
 
+_phones = iter(range(254700000001, 254799999999))
+
+
 def make_user(email, role, verified=False):
+    # every account needs its own phone number now (unique, 2547XXXXXXXX)
     return User.objects.create_user(email=email, password='pass12345', full_name=email.split('@')[0],
-                                    role=role, is_verified=verified, phone='254712345678')
+                                    role=role, is_verified=verified, phone=str(next(_phones)), phone_verified=True)
 
 
 class BookingFlowTests(APITestCase):

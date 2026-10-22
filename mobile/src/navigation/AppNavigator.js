@@ -13,6 +13,9 @@ import { COLORS as C, RADIUS } from '../theme';
 // ── Auth ──────────────────────────────────────────────────────────────────────
 import LoginScreen    from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
+import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
+import VerifyPhoneScreen from '../screens/auth/VerifyPhoneScreen';
+import FamilyOnboardingScreen from '../screens/patient/FamilyOnboardingScreen';
 
 // ── Shared ────────────────────────────────────────────────────────────────────
 import BookingsScreen      from '../screens/BookingsScreen';
@@ -39,6 +42,7 @@ import EarningsScreen          from '../screens/caregiver/EarningsScreen';
 import OpenRequestsScreen      from '../screens/caregiver/OpenRequestsScreen';
 import ApplyToRequestScreen    from '../screens/caregiver/ApplyToRequestScreen';
 import VerificationScreen      from '../screens/caregiver/VerificationScreen';
+import RateFamilyScreen        from '../screens/caregiver/RateFamilyScreen';
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
 import AdminDashboardScreen from '../screens/admin/DashboardScreen';
@@ -139,7 +143,14 @@ function RootNavigator() {
         <>
           <Stack.Screen name="Login"    component={LoginScreen} />
           <Stack.Screen name="Register" component={RegisterScreen} />
+          <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
         </>
+      ) : user.role !== 'admin' && user.phone_verification_required && !user.phone_verified ? (
+        // Phone OTP before anything else (needed for M-Pesa and account safety)
+        <Stack.Screen name="VerifyPhone" component={VerifyPhoneScreen} />
+      ) : user.role === 'patient' && user.needs_onboarding ? (
+        // First-run family setup: who the care is for + home area (skippable)
+        <Stack.Screen name="FamilyOnboarding" component={FamilyOnboardingScreen} />
       ) : user.role === 'patient' ? (
         <>
           <Stack.Screen name="PatientTabs"     component={PatientTabs} />
@@ -161,6 +172,7 @@ function RootNavigator() {
           <Stack.Screen name="CaregiverTabs"  component={CaregiverTabs} />
           <Stack.Screen name="ApplyToRequest" component={ApplyToRequestScreen} />
           <Stack.Screen name="Verification"   component={VerificationScreen} />
+          <Stack.Screen name="RateFamily"     component={RateFamilyScreen} />
           <Stack.Screen name="Earnings"       component={EarningsScreen} />
           <Stack.Screen name="AccountDetails" component={AccountScreen} />
           <Stack.Screen name="Chat"           component={ChatScreen} options={headerStyle} />

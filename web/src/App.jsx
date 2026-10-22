@@ -7,6 +7,10 @@ import { PageLoader } from './components/ui';
 import Login from './pages/auth/Login';
 import Register from './pages/auth/Register';
 import Unsupported from './pages/auth/Unsupported';
+import ForgotPassword from './pages/auth/ForgotPassword';
+import VerifyPhone from './pages/auth/VerifyPhone';
+import Welcome from './pages/patient/Welcome';
+import Legal from './pages/shared/Legal';
 
 import PatientHome from './pages/patient/Home';
 import CareNeeds from './pages/patient/CareNeeds';
@@ -45,6 +49,11 @@ export default function App() {
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/unsupported" element={<Unsupported />} />
+      <Route path="/forgot-password" element={<ForgotPassword />} />
+      <Route path="/verify-phone" element={<VerifyPhone />} />
+      <Route path="/terms" element={<Legal kind="terms" />} />
+      <Route path="/privacy" element={<Legal kind="privacy" />} />
+      <Route path="/welcome" element={<Welcome />} />
 
       <Route element={<RequireRole roles={['patient']} />}>
         <Route element={<Layout />}>

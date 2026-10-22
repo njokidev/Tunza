@@ -1,7 +1,7 @@
 import re
 
 from rest_framework import serializers
-from accounts.serializers import UserSerializer
+from accounts.serializers import PublicUserSerializer
 from .models import (
     CaregiverDocument, CaregiverProfile, Specialization, Availability,
     KENYAN_ID_REGEX, NURSE_ONLY_CARE_TYPES,
@@ -47,7 +47,8 @@ class AvailabilitySerializer(serializers.ModelSerializer):
 
 
 class CaregiverProfileSerializer(serializers.ModelSerializer):
-    user            = UserSerializer(read_only=True)
+    """A caregiver as families see them: no email, phone or payout number."""
+    user            = PublicUserSerializer(read_only=True)
     specializations = SpecializationSerializer(many=True, read_only=True)
     availability    = AvailabilitySerializer(many=True, read_only=True)
 
@@ -57,9 +58,18 @@ class CaregiverProfileSerializer(serializers.ModelSerializer):
             'id', 'user', 'bio', 'specializations', 'experience',
             'hourly_rate', 'years_exp', 'is_available', 'rating_avg',
             'rating_count', 'location_name', 'latitude', 'longitude', 'work_areas',
+            'languages', 'gender', 'day_shift_rate', 'night_shift_rate',
             'availability', 'verification_status', 'nurse_verified', 'created_at',
         ]
         read_only_fields = ['id', 'rating_avg', 'rating_count', 'verification_status', 'nurse_verified', 'created_at']
+
+
+class OwnCaregiverProfileSerializer(CaregiverProfileSerializer):
+    """The caregiver's own profile: adds the M-Pesa payout number."""
+    payout_number = serializers.CharField(read_only=True)
+
+    class Meta(CaregiverProfileSerializer.Meta):
+        fields = CaregiverProfileSerializer.Meta.fields + ['payout_phone', 'payout_number']
 
 
 class CaregiverProfileUpdateSerializer(serializers.ModelSerializer):
@@ -76,7 +86,31 @@ class CaregiverProfileUpdateSerializer(serializers.ModelSerializer):
             'bio', 'experience', 'hourly_rate', 'years_exp',
             'is_available', 'id_number', 'location_name',
             'latitude', 'longitude', 'work_areas', 'specialization_ids',
+            'languages', 'gender', 'day_shift_rate', 'night_shift_rate', 'payout_phone',
         ]
+
+    def validate_payout_phone(self, value):
+        if not value:
+            return ''
+        from accounts.phone import normalize_ke_phone
+        n = normalize_ke_phone(value)
+        if not n:
+            raise serializers.ValidationError('Enter a Kenyan M-Pesa number, e.g. 0712 345 678.')
+        return n
+
+    def validate_languages(self, value):
+        out = []
+        for v in value or []:
+            v = str(v).strip()[:40]
+            if v and v.lower() not in [x.lower() for x in out]:
+                out.append(v)
+        return out[:12]
+
+    def validate(self, attrs):
+        for k in ('day_shift_rate', 'night_shift_rate'):
+            if attrs.get(k) is not None and attrs[k] <= 0:
+                attrs[k] = None  # 0 / blank means "no shift price"
+        return attrs
 
     def validate_id_number(self, value):
         if not value:

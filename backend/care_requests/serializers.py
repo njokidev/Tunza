@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from accounts.serializers import UserSerializer
+from accounts.serializers import PublicUserSerializer, UserSerializer
 from caregivers.models import requires_nurse
 from caregivers.serializers import CaregiverProfileSerializer
 from .models import CareRequest, CareMatch, CareApplication
@@ -13,6 +13,12 @@ class CareRequestSerializer(serializers.ModelSerializer):
     def get_requires_nurse(self, obj):
         return requires_nurse(obj.care_types)
 
+    def validate_recipient(self, value):
+        request = self.context.get("request")
+        if value and request and value.owner_id != request.user.id:
+            raise serializers.ValidationError("Choose one of your own care recipients.")
+        return value
+
     def validate_start_date(self, value):
         from django.utils import timezone
         if value < timezone.localdate():
@@ -22,7 +28,7 @@ class CareRequestSerializer(serializers.ModelSerializer):
     class Meta:
         model  = CareRequest
         fields = [
-            "id","patient","care_recipient","care_types","special_needs",
+            "id","patient","recipient","care_recipient","care_types","special_needs",
             "schedule_type","start_date","end_date","hours_per_day","days_of_week",
             "address","latitude","longitude","location_name",
             "budget_min","budget_max","preferred_gender","preferred_language",
@@ -33,12 +39,24 @@ class CareRequestSerializer(serializers.ModelSerializer):
 
 
 class OpenJobSerializer(CareRequestSerializer):
-    """An open-jobs card for the caregiver who is looking at it."""
+    """
+    An open-jobs card for the caregiver who is looking at it. No street address,
+    exact pin or family contact details: those are shared only after booking.
+    """
+    patient     = PublicUserSerializer(read_only=True)
     has_applied = serializers.SerializerMethodField()
     can_apply   = serializers.SerializerMethodField()
 
     class Meta(CareRequestSerializer.Meta):
-        fields = CareRequestSerializer.Meta.fields + ["has_applied", "can_apply"]
+        fields = [f for f in CareRequestSerializer.Meta.fields if f not in ("address", "recipient")] + ["has_applied", "can_apply"]
+
+    def to_representation(self, obj):
+        data = super().to_representation(obj)
+        # Round the pin to ~1 km so distance still works but the house can't be found.
+        for k in ("latitude", "longitude"):
+            if data.get(k) is not None:
+                data[k] = round(data[k], 2)
+        return data
 
     def get_has_applied(self, obj):
         return obj.pk in self.context.get("applied_ids", set())

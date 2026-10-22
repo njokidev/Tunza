@@ -42,6 +42,18 @@ class CaregiverProfile(models.Model):
     rating_count    = models.PositiveIntegerField(default=0)
     location_name   = models.CharField(max_length=200, blank=True)       # human-readable area (home base)
     work_areas      = models.JSONField(default=list, blank=True)          # every area they'll take jobs in
+    languages       = models.JSONField(default=list, blank=True)          # e.g. ["English", "Kiswahili"]
+
+    class Gender(models.TextChoices):
+        FEMALE = 'female', 'Female'
+        MALE   = 'male',   'Male'
+
+    gender          = models.CharField(max_length=10, choices=Gender.choices, blank=True)
+    # Optional flat prices per shift, alongside the hourly rate (KES)
+    day_shift_rate   = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)   # 12-hour day
+    night_shift_rate = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)   # overnight
+    # M-Pesa number payouts go to, if different from the account phone (2547XXXXXXXX)
+    payout_phone    = models.CharField(max_length=12, blank=True)
     latitude        = models.FloatField(null=True, blank=True)
     longitude       = models.FloatField(null=True, blank=True)
     created_at      = models.DateTimeField(auto_now_add=True)
@@ -67,6 +79,10 @@ class CaregiverProfile(models.Model):
     def __str__(self):
         return f'{self.user.full_name} — Caregiver'
 
+    @property
+    def payout_number(self):
+        return self.payout_phone or self.user.phone or ''
+
     def update_rating(self):
         from ratings.models import Review
         reviews = Review.objects.filter(caregiver=self)
@@ -89,7 +105,7 @@ class CaregiverDocument(models.Model):
         ID_FRONT     = 'id_front',     'National ID (front)'
         ID_BACK      = 'id_back',      'National ID (back)'
         GOOD_CONDUCT = 'good_conduct', 'Certificate of Good Conduct'
-        NURSING      = 'nursing',      'Nursing certificate'
+        NURSING      = 'nursing',      'Nursing licence (NCK) or certificate'
         CNA          = 'cna',          'Certified Nurse Assistant certificate'
         OTHER        = 'other',        'Other certificate'
 

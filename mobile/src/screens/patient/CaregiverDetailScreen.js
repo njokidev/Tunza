@@ -101,6 +101,25 @@ export default function CaregiverDetailScreen({ route, navigation }) {
             ))}
           </Card>
 
+          {(cg.languages?.length || cg.day_shift_rate || cg.night_shift_rate) ? (
+            <Card style={{ marginTop: 14 }}>
+              {cg.languages?.length ? (
+                <View style={s.hRow}>
+                  <Feather name="message-square" size={15} color={C.primary} />
+                  <Text style={[TYPE.body, { flex: 1 }]}>Speaks {cg.languages.join(', ')}</Text>
+                </View>
+              ) : null}
+              {cg.day_shift_rate || cg.night_shift_rate ? (
+                <View style={[s.hRow, cg.languages?.length && { marginTop: 10 }]}>
+                  <Feather name="sun" size={15} color={C.primary} />
+                  <Text style={[TYPE.body, { flex: 1 }]}>
+                    {[cg.day_shift_rate && `${kes(cg.day_shift_rate)} per 12-hour day`, cg.night_shift_rate && `${kes(cg.night_shift_rate)} per night`].filter(Boolean).join(' · ')}
+                  </Text>
+                </View>
+              ) : null}
+            </Card>
+          ) : null}
+
           <View style={s.trust}>
             <Feather name="shield" size={18} color={C.primary} />
             <Text style={[TYPE.caption, { flex: 1, color: C.textBody }]}>

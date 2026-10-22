@@ -4,12 +4,13 @@ import {
 } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { careRequestApi, caregiverApi } from '../../api';
+import { authApi, careRequestApi, caregiverApi } from '../../api';
+import { useAuth } from '../../context/AuthContext';
 import { Button, Chip, Input, Notice } from '../../components/ui';
 import { AreaPicker, DateStrip } from '../../components/pickers';
 import { COLORS as C, RADIUS, SHADOWS, TYPE } from '../../theme';
 import {
-  BUDGET_BANDS, CARE_RECIPIENTS, CARE_TYPE_GROUPS, DAYS, FALLBACK_SPECIALIZATIONS, RECIPIENT_DEFAULT_CARE,
+  BUDGET_BANDS, CARE_RECIPIENTS, CARE_TYPE_GROUPS, DAYS, FALLBACK_SPECIALIZATIONS, LANGUAGES, RECIPIENT_DEFAULT_CARE,
   SCHEDULE_TYPES, careTypeMeta, isNurseOnly,
 } from '../../lib/constants';
 import { addDays, errorMessage, fmtDate, kes, recipientLabel, todayISODate, unwrap } from '../../lib/format';
@@ -28,6 +29,7 @@ const PATHS = {
  */
 export default function CareNeedsScreen({ route, navigation }) {
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const [path, setPath] = useState(route.params?.path === 'open_request' ? 'open_request' : 'smart_match');
   const preset = route.params?.care_recipient;
   const [step, setStep] = useState(preset ? 1 : 0);
@@ -42,15 +44,22 @@ export default function CareNeedsScreen({ route, navigation }) {
     end_date: '',
     hours_per_day: 8,
     days_of_week: [],
-    location_name: '',
-    latitude: null,
-    longitude: null,
-    address: '',
+    // Pre-filled from the family's saved home (onboarding / Profile)
+    location_name: user?.home_area || '',
+    latitude: user?.home_latitude ?? null,
+    longitude: user?.home_longitude ?? null,
+    address: user?.home_address || '',
+    recipient: null,
     budget_band: 1,
   });
+  const [people, setPeople] = useState([]);
   const [specs, setSpecs] = useState(FALLBACK_SPECIALIZATIONS);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    authApi.recipients().then((r) => setPeople(unwrap(r.data))).catch(() => {});
+  }, []);
 
   useEffect(() => {
     caregiverApi.specializations()
@@ -68,6 +77,14 @@ export default function CareNeedsScreen({ route, navigation }) {
     const nextDefault = RECIPIENT_DEFAULT_CARE[value];
     const untouched = form.care_types.length === 0 || (form.care_types.length === 1 && form.care_types[0] === prevDefault);
     set({ care_recipient: value, ...(untouched ? { care_types: nextDefault ? [nextDefault] : [] } : {}) });
+  };
+
+  // A saved person: links the request to them and picks their usual kind of care.
+  const pickPerson = (p) => {
+    if (form.recipient === p.id) return set({ recipient: null });
+    const cr = p.care_recipient || (p.age_group === 'child' ? 'child' : p.age_group === 'elderly' ? 'elderly' : '');
+    set({ recipient: p.id });
+    if (cr) pickRecipient(cr);
   };
 
   // Care types grouped into sections, each with an icon and a one-line description.
@@ -109,6 +126,7 @@ export default function CareNeedsScreen({ route, navigation }) {
     setError('');
     const band = BUDGET_BANDS[form.budget_band];
     const { budget_band, ...rest } = form; // eslint-disable-line no-unused-vars
+    if (!rest.recipient) delete rest.recipient;
     const payload = {
       ...rest,
       end_date: form.end_date || null,
@@ -158,7 +176,18 @@ export default function CareNeedsScreen({ route, navigation }) {
       <ScrollView contentContainerStyle={s.body} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
         {step === 0 && (
           <View>
-            <Text style={s.q}>Who needs care?</Text>
+            {people.length ? (
+              <View style={{ marginBottom: 18 }}>
+                <Text style={s.q}>Who is this for?</Text>
+                <View style={s.wrap}>
+                  {people.map((p) => (
+                    <Chip key={p.id} label={p.is_self ? 'Me' : `${p.name}${p.relationship ? ` (${p.relationship})` : ''}`}
+                      iconName={p.is_self ? 'user' : 'users'} active={form.recipient === p.id} onPress={() => pickPerson(p)} />
+                  ))}
+                </View>
+              </View>
+            ) : null}
+            <Text style={s.q}>{people.length ? 'What kind of care do they need?' : 'Who needs care?'}</Text>
             {CARE_RECIPIENTS.map((c) => {
               const on = form.care_recipient === c.value;
               return (
@@ -231,6 +260,13 @@ export default function CareNeedsScreen({ route, navigation }) {
             <View style={s.wrap}>
               {[['', 'No preference'], ['female', 'Female'], ['male', 'Male']].map(([v, l]) => (
                 <Chip key={l} label={l} active={form.preferred_gender === v} onPress={() => set({ preferred_gender: v })} />
+              ))}
+            </View>
+            {form.preferred_gender ? <Text style={[s.hint, { marginTop: 8, marginBottom: 0 }]}>We'll only show {form.preferred_gender} caregivers.</Text> : null}
+            <Text style={s.label}>Preferred language</Text>
+            <View style={s.wrap}>
+              {['', ...LANGUAGES.slice(0, 6)].map((l) => (
+                <Chip key={l || 'any'} label={l || 'Any'} active={form.preferred_language === l} onPress={() => set({ preferred_language: l })} />
               ))}
             </View>
           </View>

@@ -9,18 +9,18 @@ from django_filters.rest_framework import DjangoFilterBackend
 from accounts.models import Notification, User
 from .models import CaregiverDocument, CaregiverProfile, Specialization, Availability
 from .serializers import (
-    CaregiverProfileSerializer, CaregiverProfileUpdateSerializer,
+    CaregiverProfileSerializer, CaregiverProfileUpdateSerializer, OwnCaregiverProfileSerializer,
     SpecializationSerializer, AvailabilitySerializer, VerificationStatusSerializer, clean_id_number,
 )
 from . import documents as doc_store
-from accounts.permissions import IsCaregiver, IsAdmin
+from accounts.permissions import IsCaregiver, IsAdmin, PhoneVerified
 
 
 class CaregiverListView(generics.ListAPIView):
     """Public search — patients find caregivers."""
     serializer_class = CaregiverProfileSerializer
     filter_backends  = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['is_available', 'experience', 'specializations']
+    filterset_fields = ['is_available', 'experience', 'specializations', 'gender']
     search_fields    = ['user__full_name', 'bio', 'location_name', 'specializations__name']
     ordering_fields  = ['rating_avg', 'hourly_rate', 'years_exp']
     ordering         = ['-rating_avg']
@@ -31,6 +31,9 @@ class CaregiverListView(generics.ListAPIView):
         max_rate = self.request.query_params.get('max_rate')
         if max_rate:
             qs = qs.filter(hourly_rate__lte=max_rate)
+        language = self.request.query_params.get('language')
+        if language:
+            qs = qs.filter(languages__icontains=language)
         # filter verified only by default
         verified = self.request.query_params.get('verified', 'true')
         if verified == 'true':
@@ -55,7 +58,7 @@ class MyCaregiverProfileView(generics.RetrieveUpdateAPIView):
     def get_serializer_class(self):
         if self.request.method in ['PUT', 'PATCH']:
             return CaregiverProfileUpdateSerializer
-        return CaregiverProfileSerializer
+        return OwnCaregiverProfileSerializer
 
 
 class AvailabilityView(APIView):
@@ -119,7 +122,7 @@ class VerificationView(APIView):
              other          any other relevant certificate (optional, repeatable)
            Moves the application to "pending" — Tunza reviews within 2–3 days.
     """
-    permission_classes = [IsCaregiver]
+    permission_classes = [IsCaregiver, PhoneVerified]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
     REQUIRED = ['id_front', 'id_back', 'good_conduct']

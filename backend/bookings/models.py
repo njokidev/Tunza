@@ -32,6 +32,20 @@ class Booking(models.Model):
     longitude     = models.FloatField(null=True, blank=True)
     special_needs = models.TextField(blank=True)
     total_amount  = models.DecimalField(max_digits=10, decimal_places=2, default=0)
+    care_request  = models.ForeignKey('care_requests.CareRequest', on_delete=models.SET_NULL,
+                                      null=True, blank=True, related_name='bookings')
+    decline_reason = models.CharField(max_length=200, blank=True)
+    accepted_at   = models.DateTimeField(null=True, blank=True)
+    completed_at  = models.DateTimeField(null=True, blank=True)
+    # GPS check-in (start) / check-out (end): where the caregiver's phone was
+    check_in_at        = models.DateTimeField(null=True, blank=True)
+    check_in_latitude  = models.FloatField(null=True, blank=True)
+    check_in_longitude = models.FloatField(null=True, blank=True)
+    check_in_distance_m = models.PositiveIntegerField(null=True, blank=True)   # from the care address
+    check_out_at        = models.DateTimeField(null=True, blank=True)
+    check_out_latitude  = models.FloatField(null=True, blank=True)
+    check_out_longitude = models.FloatField(null=True, blank=True)
+    check_out_distance_m = models.PositiveIntegerField(null=True, blank=True)
     is_paid       = models.BooleanField(default=False)
     notes         = models.TextField(blank=True)
     created_at    = models.DateTimeField(auto_now_add=True)
@@ -44,7 +58,19 @@ class Booking(models.Model):
         return f'Booking {self.id} — {self.patient.full_name} → {self.caregiver.user.full_name}'
 
     def calculate_amount(self):
+        """Hourly by default; a caregiver's shift price is used when the visit is a shift:
+        overnight care with a night rate, or a 10+ hour day with a day rate."""
+        from decimal import Decimal
+        cg = self.caregiver
         duration_hours = (self.end_date - self.start_date).total_seconds() / 3600
-        self.total_amount = round(duration_hours * float(self.caregiver.hourly_rate), 2)
+        if self.care_type == self.CareType.OVERNIGHT and cg.night_shift_rate:
+            nights = max(1, round(duration_hours / 12))
+            amount = cg.night_shift_rate * nights
+        elif duration_hours >= 10 and cg.day_shift_rate:
+            days = max(1, round(duration_hours / 12))
+            amount = cg.day_shift_rate * days
+        else:
+            amount = Decimal(str(duration_hours)) * cg.hourly_rate
+        self.total_amount = Decimal(amount).quantize(Decimal('0.01'))
         self.save(update_fields=['total_amount'])
         return self.total_amount

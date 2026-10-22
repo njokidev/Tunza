@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { CalendarCheck, CheckCircle2, Clock, MapPin, MessageCircle, Play, Star, X } from 'lucide-react';
+import { CalendarCheck, CheckCircle2, Clock, Info, MapPin, MessageCircle, Navigation, Phone, Play, Star, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { bookingApi, ratingApi, unwrap } from '../../api/endpoints';
 import { errorMessage } from '../../api/client';
@@ -26,8 +26,8 @@ const ACTIONS = {
       { status: 'rejected', label: 'Decline', variant: 'ghost', icon: X, confirm: 'Decline this booking request?' },
       { status: 'accepted', label: 'Accept', variant: 'primary', icon: CheckCircle2 },
     ],
-    accepted: [{ status: 'ongoing', label: 'Start service', variant: 'primary', icon: Play }],
-    ongoing: [{ status: 'completed', label: 'End service', variant: 'success', icon: CheckCircle2, confirm: 'Mark this visit as complete? Payment will be released to you.' }],
+    accepted: [{ status: 'ongoing', label: 'Check in & start', variant: 'primary', icon: Play, gps: true }],
+    ongoing: [{ status: 'completed', label: 'Check out & end', variant: 'success', icon: CheckCircle2, gps: true, confirm: 'Mark this visit as complete? Payment will be released to you.' }],
   },
   patient: {
     pending: [{ status: 'cancelled', label: 'Cancel', variant: 'danger-soft', icon: X, confirm: 'Cancel this booking request?' }],
@@ -35,7 +35,16 @@ const ACTIONS = {
   },
 };
 
-export function BookingCard({ booking: b, role, onChange, onReview }) {
+/** Browser location for GPS check-in / check-out; null if refused or unavailable. */
+const currentPosition = () => new Promise((resolve) => {
+  if (!navigator.geolocation) return resolve(null);
+  navigator.geolocation.getCurrentPosition(
+    ({ coords }) => resolve({ latitude: Number(coords.latitude.toFixed(6)), longitude: Number(coords.longitude.toFixed(6)) }),
+    () => resolve(null), { enableHighAccuracy: true, timeout: 12000 });
+});
+const fmtPhone = (n) => (n && n.length === 12 ? `0${n.slice(3, 6)} ${n.slice(6, 9)} ${n.slice(9)}` : n || '');
+
+export function BookingCard({ booking: b, role, onChange, onReview, onRateFamily }) {
   const { startChat, starting } = useStartChat();
   const [busy, setBusy] = useState(null);
   const [error, setError] = useState('');
@@ -47,7 +56,16 @@ export function BookingCard({ booking: b, role, onChange, onReview }) {
     setBusy(a.status);
     setError('');
     try {
-      const { data } = await bookingApi.setStatus(b.id, a.status);
+      let extra = {};
+      if (a.gps) {
+        const pos = await currentPosition();
+        if (!pos && !window.confirm('We couldn’t get your location. Continue without GPS check-in/out? The family and Tunza will see it wasn’t recorded.')) {
+          setBusy(null);
+          return;
+        }
+        extra = pos || {};
+      }
+      const { data } = await bookingApi.setStatus(b.id, a.status, extra);
       onChange(data);
     } catch (e) {
       setError(errorMessage(e));
@@ -73,10 +91,34 @@ export function BookingCard({ booking: b, role, onChange, onReview }) {
             </div>
             <div className="flex items-start gap-2">
               <MapPin className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
-              <span className="line-clamp-2">{b.address}</span>
+              <span className="line-clamp-2">
+                {b.address}
+                {role === 'caregiver' && b.contact?.unlocked === false && (
+                  <span className="text-xs text-gray-400"> · full address after {b.contact.unlocks_when === 'paid' ? 'payment' : 'you accept'}</span>
+                )}
+              </span>
             </div>
+            {role === 'caregiver' && b.family_rating?.count > 0 && (
+              <div className="flex items-center gap-2"><Star className="h-4 w-4 shrink-0 fill-amber-400 text-amber-400" />Family rated {b.family_rating.avg} by {b.family_rating.count} caregiver{b.family_rating.count === 1 ? '' : 's'}</div>
+            )}
+            {b.status === 'rejected' && b.decline_reason && (
+              <div className="flex items-center gap-2"><Info className="h-4 w-4 shrink-0 text-gray-400" />{b.decline_reason}</div>
+            )}
+            {b.check_in_at && (
+              <div className={`flex items-center gap-2 ${b.check_in_flagged ? 'text-amber-700' : ''}`}>
+                <Navigation className="h-4 w-4 shrink-0" />
+                Checked in {fmtTime(b.check_in_at)}{b.check_in_distance_m != null ? ` (${b.check_in_distance_m} m from address)` : ' (no GPS)'}
+                {b.check_out_at ? ` · out ${fmtTime(b.check_out_at)}` : ''}
+              </div>
+            )}
           </div>
           {b.special_needs && <p className="mt-3 rounded-xl bg-gray-50 p-3 text-sm text-gray-600">{b.special_needs}</p>}
+          {['pending', 'accepted', 'ongoing'].includes(b.status) && b.contact?.unlocked && (role === 'caregiver' ? b.contact.patient_phone : b.contact.caregiver_phone) && (
+            <a href={`tel:+${role === 'caregiver' ? b.contact.patient_phone : b.contact.caregiver_phone}`}
+              className="mt-3 inline-flex items-center gap-2 rounded-xl bg-brand-50 px-3 py-2 text-sm font-semibold text-brand-700">
+              <Phone className="h-4 w-4" /> Call {role === 'caregiver' ? 'the family' : 'your caregiver'} · {fmtPhone(role === 'caregiver' ? b.contact.patient_phone : b.contact.caregiver_phone)}
+            </a>
+          )}
         </div>
       </div>
 
@@ -98,6 +140,10 @@ export function BookingCard({ booking: b, role, onChange, onReview }) {
           {role === 'patient' && b.status === 'completed' && !b.review && (
             <Button variant="secondary" size="sm" onClick={() => onReview(b)}><Star className="h-4 w-4" /> Leave review</Button>
           )}
+          {role === 'caregiver' && b.status === 'completed' && !b.family_review && (
+            <Button variant="secondary" size="sm" onClick={() => onRateFamily(b)}><Star className="h-4 w-4" /> Rate family</Button>
+          )}
+          {role === 'caregiver' && b.family_review && <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700"><CheckCircle2 className="h-4 w-4" /> Rated</span>}
           {role === 'patient' && b.review && <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700"><CheckCircle2 className="h-4 w-4" /> Reviewed</span>}
           {actions.map((a) => (
             <Button key={a.status} variant={a.variant} size="sm" onClick={() => act(a)} loading={busy === a.status} disabled={!!busy}>
@@ -144,12 +190,41 @@ function ReviewModal({ booking, onClose, onDone }) {
   );
 }
 
+function RateFamilyModal({ booking, onClose, onDone }) {
+  const [score, setScore] = useState(5);
+  const [comment, setComment] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  if (!booking) return null;
+  const submit = async () => {
+    setSaving(true); setError('');
+    try {
+      const { data } = await ratingApi.rateFamily({ booking: booking.id, score, comment });
+      onDone({ ...booking, family_review: data.id });
+    } catch (e) { setError(errorMessage(e)); setSaving(false); }
+  };
+  return (
+    <Modal open title={`Rate the ${booking.patient.full_name.split(' ')[0]} family`} onClose={onClose}
+      footer={<><Button variant="ghost" onClick={onClose}>Not now</Button><Button onClick={submit} loading={saving}>Submit rating</Button></>}>
+      <div className="space-y-4">
+        <p className="text-sm text-gray-600">Only Tunza and other caregivers see the average. The family doesn’t see your rating.</p>
+        <StarInput value={score} onChange={setScore} />
+        <Field label="Anything other caregivers should know?" hint="Optional">
+          <textarea className="input min-h-[100px]" value={comment} onChange={(e) => setComment(e.target.value)} />
+        </Field>
+        <Alert>{error}</Alert>
+      </div>
+    </Modal>
+  );
+}
+
 export default function Bookings() {
   const { user } = useAuth();
   const role = user.role;
   const location = useLocation();
-  const [notice, setNotice] = useState(location.state?.booked ? 'Booking request sent. You’ll be notified when the caregiver responds.' : '');
+  const [notice, setNotice] = useState(location.state?.booked ? 'Booking request sent. The caregiver has 30 minutes to accept — you’ll be notified either way.' : '');
   const [reviewing, setReviewing] = useState(null);
+  const [ratingFamily, setRatingFamily] = useState(null);
   const { data, setData, loading, error } = useAsync(async () => unwrap((await bookingApi.list()).data), []);
 
   const grouped = useMemo(() => {
@@ -199,13 +274,14 @@ export default function Bookings() {
           ) : (
             <div className="grid gap-4 lg:grid-cols-2">
               {grouped[current].map((b) => (
-                <BookingCard key={b.id} booking={b} role={role} onChange={replace} onReview={setReviewing} />
+                <BookingCard key={b.id} booking={b} role={role} onChange={replace} onReview={setReviewing} onRateFamily={setRatingFamily} />
               ))}
             </div>
           )}
         </>
       )}
       <ReviewModal booking={reviewing} onClose={() => setReviewing(null)} onDone={(b) => { replace(b); setReviewing(null); }} />
+      <RateFamilyModal booking={ratingFamily} onClose={() => setRatingFamily(null)} onDone={(b) => { replace(b); setRatingFamily(null); }} />
     </div>
   );
 }

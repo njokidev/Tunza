@@ -7,7 +7,7 @@ from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from accounts.models import Notification
-from accounts.permissions import IsPatient, IsCaregiver
+from accounts.permissions import IsPatient, IsCaregiver, PhoneVerified
 from .models import CareRequest, CareMatch, CareApplication
 from .serializers import CareRequestSerializer, CareMatchSerializer, CareApplicationSerializer, OpenJobSerializer
 from .matching import run_matching
@@ -48,7 +48,7 @@ def _close_other_applications(cr, winner):
 
 class CreateCareRequestView(generics.CreateAPIView):
     serializer_class   = CareRequestSerializer
-    permission_classes = [IsPatient]
+    permission_classes = [IsPatient, PhoneVerified]
 
     def perform_create(self, serializer):
         cr = serializer.save(patient=self.request.user)
@@ -160,7 +160,7 @@ class OpenRequestsView(generics.ListAPIView):
 
 
 class ApplyToCareRequestView(APIView):
-    permission_classes = [IsCaregiver]
+    permission_classes = [IsCaregiver, PhoneVerified]
 
     def post(self, request, pk):
         try:

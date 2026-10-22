@@ -316,15 +316,19 @@ class BookingListView(generics.ListAPIView):
 # ── Payouts ───────────────────────────────────────────────────────────────────
 
 def _due_queryset():
-    """Paid, completed bookings not yet covered by a payout."""
-    return Booking.objects.filter(status='completed', is_paid=True, payouts__isnull=True)
+    """Paid, completed bookings not yet covered by a payout and past the earnings hold
+    (EARNINGS_HOLD_HOURS) — the same "available" money the caregiver's wallet shows."""
+    from django.conf import settings
+    cutoff = timezone.now() - timedelta(hours=settings.EARNINGS_HOLD_HOURS)
+    return Booking.objects.filter(status='completed', is_paid=True, payouts__isnull=True).filter(
+        Q(completed_at__lt=cutoff) | Q(completed_at__isnull=True, end_date__lt=cutoff))
 
 
 class PayoutsDueView(APIView):
     permission_classes = [IsAdmin]
 
     def get(self, request):
-        rows = (_due_queryset().values('caregiver', 'caregiver__user__full_name', 'caregiver__user__phone')
+        rows = (_due_queryset().values('caregiver', 'caregiver__user__full_name', 'caregiver__user__phone', 'caregiver__payout_phone')
                 .annotate(visits=Count('id'), gross=Sum('total_amount')).order_by('-gross'))
         out = []
         for r in rows:
@@ -332,7 +336,7 @@ class PayoutsDueView(APIView):
             out.append({
                 'caregiver_id': str(r['caregiver']),
                 'name': r['caregiver__user__full_name'],
-                'phone': r['caregiver__user__phone'],
+                'phone': r['caregiver__payout_phone'] or r['caregiver__user__phone'],
                 'visits': r['visits'],
                 'gross': money(gross),
                 'commission': money(gross * COMMISSION_RATE),
@@ -382,7 +386,7 @@ class PayoutListCreateView(generics.ListAPIView):
                 caregiver=cg, gross_amount=gross.quantize(TWO_DP),
                 commission=(gross * COMMISSION_RATE).quantize(TWO_DP),
                 amount=(gross * (1 - COMMISSION_RATE)).quantize(TWO_DP),
-                phone=cg.user.phone, mpesa_reference=ref,
+                phone=cg.payout_number, mpesa_reference=ref,
                 note=(request.data.get('note') or '').strip(), created_by=request.user,
             )
             payout.bookings.set(due)
