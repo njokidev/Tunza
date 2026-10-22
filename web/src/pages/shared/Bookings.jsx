@@ -26,8 +26,9 @@ const ACTIONS = {
       { status: 'rejected', label: 'Decline', variant: 'ghost', icon: X, confirm: 'Decline this booking request?' },
       { status: 'accepted', label: 'Accept', variant: 'primary', icon: CheckCircle2 },
     ],
-    accepted: [{ status: 'ongoing', label: 'Check in & start', variant: 'primary', icon: Play, gps: true }],
-    ongoing: [{ status: 'completed', label: 'Check out & end', variant: 'success', icon: CheckCircle2, gps: true, confirm: 'Mark this visit as complete? Payment will be released to you.' }],
+    // Both need the 4-digit PIN the family gives the caregiver on the day.
+    accepted: [{ status: 'ongoing', label: 'Check in & start', variant: 'primary', icon: Play, gps: true, pin: 'start' }],
+    ongoing: [{ status: 'completed', label: 'Check out & end', variant: 'success', icon: CheckCircle2, gps: true, pin: 'end' }],
   },
   patient: {
     pending: [{ status: 'cancelled', label: 'Cancel', variant: 'danger-soft', icon: X, confirm: 'Cancel this booking request?' }],
@@ -53,17 +54,25 @@ export function BookingCard({ booking: b, role, onChange, onReview, onRateFamily
 
   const act = async (a) => {
     if (a.confirm && !window.confirm(a.confirm)) return;
+    let pin;
+    if (a.pin) {
+      pin = window.prompt(a.pin === 'start'
+        ? 'Enter the 4-digit START PIN the family gives you:'
+        : 'Enter the 4-digit END PIN the family gives you. This releases your pay:');
+      if (pin == null) return;
+      pin = pin.replace(/\D/g, '');
+    }
     setBusy(a.status);
     setError('');
     try {
-      let extra = {};
+      let extra = pin ? { pin } : {};
       if (a.gps) {
         const pos = await currentPosition();
         if (!pos && !window.confirm('We couldn’t get your location. Continue without GPS check-in/out? The family and Tunza will see it wasn’t recorded.')) {
           setBusy(null);
           return;
         }
-        extra = pos || {};
+        extra = { ...extra, ...(pos || {}) };
       }
       const { data } = await bookingApi.setStatus(b.id, a.status, extra);
       onChange(data);
@@ -152,6 +161,19 @@ export function BookingCard({ booking: b, role, onChange, onReview, onRateFamily
           ))}
         </div>
       </div>
+      {role === 'patient' && b.visit_pin?.pin && (
+        <div className="mt-4 flex items-center justify-between gap-4 rounded-xl border border-brand-100 bg-brand-50 px-4 py-3">
+          <div>
+            <div className="text-[11px] font-extrabold tracking-widest text-brand-800">{b.visit_pin.needed === 'start' ? 'START PIN' : 'END PIN'}</div>
+            <div className="text-xs text-gray-600">
+              {b.visit_pin.needed === 'start'
+                ? `Give this to ${other?.full_name ?? 'your caregiver'} when they arrive.`
+                : 'Give this only when the visit is finished. It releases their pay.'}
+            </div>
+          </div>
+          <div className="font-mono text-3xl font-extrabold tracking-[0.3em] text-brand-800">{b.visit_pin.pin}</div>
+        </div>
+      )}
       {error && <div className="mt-3"><Alert>{error}</Alert></div>}
     </Card>
   );
