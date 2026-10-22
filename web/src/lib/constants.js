@@ -104,6 +104,27 @@ export const AREAS = [
   { name: 'Londiani', lat: -0.1667, lng: 35.6000 },
 ];
 
+// County for each area, for the grouped work-areas picker (same groups as the mobile app).
+export const AREA_COUNTIES = ['Nairobi', 'Kiambu', 'Kajiado', 'Machakos', 'Nakuru', 'Kericho'];
+const COUNTY_OF = {
+  Ruaka: 'Kiambu', Kikuyu: 'Kiambu', 'Kiambu Town': 'Kiambu', Ruiru: 'Kiambu', Juja: 'Kiambu', Thika: 'Kiambu',
+  Syokimau: 'Machakos', Kitengela: 'Kajiado', Rongai: 'Kajiado', Ngong: 'Kajiado',
+  'Nakuru Town': 'Nakuru', 'Milimani (Nakuru)': 'Nakuru', 'Section 58': 'Nakuru', Lanet: 'Nakuru', Njoro: 'Nakuru',
+  Gilgil: 'Nakuru', Naivasha: 'Nakuru', Molo: 'Nakuru',
+  'Kericho Town': 'Kericho', Kapsoit: 'Kericho', Litein: 'Kericho', Kipkelion: 'Kericho', Londiani: 'Kericho',
+};
+export const countyOf = (name) => COUNTY_OF[name] || 'Nairobi';
+
+// Caregiver verification documents (same list as the mobile app).
+export const VERIFICATION_DOCS = [
+  { key: 'id_front', title: 'National ID — front', hint: 'A clear photo or scan. All four corners visible.', required: true },
+  { key: 'id_back', title: 'National ID — back', hint: 'The side with the fingerprint.', required: true },
+  { key: 'good_conduct', title: 'Certificate of Good Conduct', hint: 'From eCitizen (DCI). PDF or photo.', required: true },
+  { key: 'nursing', title: 'Nursing certificate', hint: 'Needed for medication administration jobs.', required: false },
+  { key: 'cna', title: 'Certified Nurse Assistant (CNA)', hint: 'Needed for medication administration jobs.', required: false },
+];
+export const MAX_OTHER_DOCS = 5;
+
 export const BOOKING_STATUS = {
   pending: { label: 'Pending', className: 'bg-amber-50 text-amber-700 ring-amber-200' },
   accepted: { label: 'Accepted', className: 'bg-sky-50 text-sky-700 ring-sky-200' },

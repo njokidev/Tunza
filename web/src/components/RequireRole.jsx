@@ -14,5 +14,7 @@ export default function RequireRole({ roles }) {
   // Phone OTP first, then the family's first-run setup.
   if (needsPhoneVerification(user)) return <Navigate to="/verify-phone" replace />;
   if (user.role === 'patient' && user.needs_onboarding) return <Navigate to="/welcome" replace />;
+  // New caregivers: documents -> verification wait -> profile -> areas -> availability.
+  if (user.role === 'caregiver' && user.caregiver_setup?.next) return <Navigate to="/caregiver/setup" replace />;
   return <Outlet />;
 }
