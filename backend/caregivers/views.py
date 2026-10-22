@@ -61,6 +61,55 @@ class MyCaregiverProfileView(generics.RetrieveUpdateAPIView):
         return OwnCaregiverProfileSerializer
 
 
+class ProfileSetupView(APIView):
+    """
+    POST — onboarding step after verification is approved: the profile families see.
+      bio (40+ characters), years_exp, hourly_rate (KES 100+), specialization_ids (1+),
+      languages (1+), gender (optional), day_shift_rate / night_shift_rate (optional).
+    Saves everything and marks the profile step done.
+    """
+    permission_classes = [IsCaregiver]
+    MIN_BIO = 40
+    MIN_RATE = 100
+
+    def post(self, request):
+        profile, _ = CaregiverProfile.objects.get_or_create(user=request.user)
+        if profile.verification_status != CaregiverProfile.VerificationStatus.APPROVED and not request.user.is_verified:
+            return Response({'detail': 'You can set up your profile once your documents are approved.'},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        allowed = ['bio', 'years_exp', 'hourly_rate', 'specialization_ids', 'languages', 'gender',
+                   'day_shift_rate', 'night_shift_rate']
+        data = {k: request.data[k] for k in allowed if k in request.data}
+        try:
+            years = max(0, int(data.get('years_exp') or 0))
+        except (TypeError, ValueError):
+            years = 0
+        data['years_exp'] = years
+        data['experience'] = 'senior' if years >= 5 else 'mid' if years >= 2 else 'junior'
+
+        ser = CaregiverProfileUpdateSerializer(profile, data=data, partial=True)
+        ser.is_valid(raise_exception=True)
+        v = ser.validated_data
+        errors = {}
+        if len((v.get('bio') or '').strip()) < self.MIN_BIO:
+            errors['bio'] = [f'Write at least {self.MIN_BIO} characters about your experience.']
+        if (v.get('hourly_rate') or 0) < self.MIN_RATE:
+            errors['hourly_rate'] = [f'Set an hourly rate of at least KES {self.MIN_RATE}.']
+        if not v.get('specialization_ids'):
+            errors['specialization_ids'] = ['Choose at least one type of care you offer.']
+        if not v.get('languages'):
+            errors['languages'] = ['Choose at least one language you speak.']
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
+        with transaction.atomic():
+            ser.save()
+            profile.profile_completed_at = timezone.now()
+            profile.save(update_fields=['profile_completed_at'])
+        return Response(OwnCaregiverProfileSerializer(profile, context={'request': request}).data)
+
+
 class AvailabilityView(APIView):
     permission_classes = [IsCaregiver]
 

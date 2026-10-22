@@ -75,24 +75,46 @@ class UserSerializer(serializers.ModelSerializer):
         # Families get a short first-run setup: home area + who the care is for.
         return obj.role == User.Role.PATIENT and obj.onboarding_completed_at is None
 
+    CAREGIVER_STEPS = ('documents', 'verification', 'profile', 'areas', 'availability')
+
     def get_caregiver_setup(self, obj):
         """
-        New caregivers go through three screens, in this order, before the app opens:
-        documents -> work areas -> weekly availability. `next` is the first one not
-        done yet, or None when they're through (the apps route on it).
+        New caregivers go through these screens, in order, before the app opens:
+          documents     upload ID, good conduct, certificates
+          verification  wait for Tunza's background check (2-3 days)
+          profile       bio, experience, rate, specialties, languages
+          areas         where they'll work
+          availability  days and hours
+        `next` is the first one not done yet, or None when they're through (the apps
+        route on it). A rejected application goes back to `documents`.
+
+        The verification wait only applies the first time: a caregiver who has already
+        finished setup and is later un-verified keeps using the app (hidden from search)
+        so they can still see their bookings.
         """
         if obj.role != User.Role.CAREGIVER:
             return None
         profile = getattr(obj, 'caregiver_profile', None)
+        status = profile.verification_status if profile else 'not_submitted'
         if profile is None:
-            return {'next': 'documents', 'documents': False, 'areas': False, 'availability': False}
-        done = {
-            'documents': profile.verification_status != 'not_submitted',
-            'areas': bool(profile.work_areas) or bool(profile.location_name),
-            'availability': profile.availability.exists(),
+            done = dict.fromkeys(self.CAREGIVER_STEPS, False)
+        else:
+            setup_finished = profile.profile_completed_at is not None
+            done = {
+                'documents': status in ('pending', 'approved') or setup_finished,
+                'verification': status == 'approved' or obj.is_verified or setup_finished,
+                'profile': setup_finished,
+                'areas': bool(profile.work_areas) or bool(profile.location_name),
+                'availability': profile.availability.exists(),
+            }
+        nxt = next((k for k in self.CAREGIVER_STEPS if not done[k]), None)
+        return {
+            'next': nxt, **done,
+            'verification_status': status,
+            'verification_submitted_at': profile.verification_submitted_at if profile else None,
+            'verification_expected_by': profile.verification_expected_by if profile else None,
+            'verification_note': profile.verification_note if profile else '',
         }
-        nxt = next((k for k in ('documents', 'areas', 'availability') if not done[k]), None)
-        return {'next': nxt, **done}
 
     def validate_phone(self, value):
         return clean_phone(value, exclude_user=self.instance)

@@ -72,12 +72,22 @@ class CaregiverProfile(models.Model):
     verification_note         = models.TextField(blank=True)   # reason shown to the caregiver if rejected
     # Set by an admin after checking a nursing / CNA certificate. Unlocks medication administration jobs.
     nurse_verified            = models.BooleanField(default=False)
+    # Set when the caregiver finishes the profile step of onboarding (after approval).
+    profile_completed_at      = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-rating_avg']
 
     def __str__(self):
         return f'{self.user.full_name} — Caregiver'
+
+    @property
+    def verification_expected_by(self):
+        """When we promise an answer: 3 days after the documents came in."""
+        if not self.verification_submitted_at:
+            return None
+        from datetime import timedelta
+        return self.verification_submitted_at + timedelta(days=3)
 
     @property
     def payout_number(self):

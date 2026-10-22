@@ -285,9 +285,19 @@ class UserActionView(APIView):
                 profile.save(update_fields=['verification_status', 'verification_note', 'nurse_verified'])
 
         title, body = self.MESSAGES[action]
+        if action == 'verify' and profile.profile_completed_at is None:
+            # Still onboarding: the next step is setting up the profile families see.
+            body = 'Your background check is complete. Open Tunza to set up your profile and start getting jobs.'
         if reason:
             body = f'{body} Reason: {reason}'
         Notification.objects.create(user=user, title=title, body=body, type='system')
+        if action in ('verify', 'reject') and user.phone:
+            # Caregivers wait 2-3 days for this, usually with the app closed, so text them too.
+            from .sms import SMSError, send_sms
+            try:
+                send_sms(user.phone, f'Tunza: {body}')
+            except SMSError:
+                pass  # the in-app notification is still there
         return Response(AdminUserSerializer(users_with_counts().get(id=user.id)).data)
 
 
