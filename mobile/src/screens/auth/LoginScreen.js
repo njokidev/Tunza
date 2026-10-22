@@ -14,7 +14,7 @@ export default function LoginScreen({ navigation }) {
 
   const validate = () => {
     const e = {};
-    if (!form.email)    e.email    = 'Email is required';
+    if (!form.email)    e.email    = 'Enter your email or phone number';
     if (!form.password) e.password = 'Password is required';
     setErrors(e);
     return !Object.keys(e).length;
@@ -26,7 +26,10 @@ export default function LoginScreen({ navigation }) {
     try {
       await login(form.email.trim(), form.password);
     } catch (err) {
-      const msg = err.response?.data?.detail || 'Cannot reach server. Check your API URL and backend network access.';
+      const status = err.response?.status;
+      const msg = status === 429 ? 'Too many sign-in attempts. Wait a minute and try again.'
+        : status === 401 ? 'That email/phone and password don’t match. Check them, or tap "Forgot password?".'
+          : err.response?.data?.detail || 'Cannot reach server. Check your API URL and backend network access.';
       Alert.alert('Login Failed', msg);
     } finally { setLoading(false); }
   };
@@ -51,8 +54,8 @@ export default function LoginScreen({ navigation }) {
           <Text style={s.formSub}>Sign in to continue</Text>
 
           <Input
-            label="Email address"
-            placeholder="you@example.com"
+            label="Email or phone"
+            placeholder="you@example.com or 0712 345 678"
             icon="✉"
             keyboardType="email-address"
             autoCapitalize="none"
@@ -69,6 +72,10 @@ export default function LoginScreen({ navigation }) {
             error={errors.password}
           />
 
+          <TouchableOpacity onPress={() => navigation.navigate('ForgotPassword', { identifier: form.email.trim() })}
+            style={{ alignSelf: 'flex-end', marginTop: -4, marginBottom: 4 }} hitSlop={8}>
+            <Text style={{ color: C.primary, fontWeight: '700', fontSize: 13 }}>Forgot password?</Text>
+          </TouchableOpacity>
           <Button title="Sign In" onPress={handleLogin} loading={loading} style={{marginTop:8}} />
 
           <View style={s.dividerRow}>

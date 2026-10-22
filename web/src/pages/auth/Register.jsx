@@ -12,19 +12,19 @@ const ROLES = [
   { value: 'caregiver', title: "I'm a caregiver", text: 'Find clients and get paid', icon: HeartHandshake },
 ];
 
-// Accept 07xx / 01xx / 2547xx / +2547xx and store as +254…
+// Accept 07xx / 01xx / 2547xx / +2547xx and send as 2547… (the format M-Pesa uses)
 function normalisePhone(raw) {
   const digits = raw.replace(/\D/g, '');
-  if (/^0[17]\d{8}$/.test(digits)) return `+254${digits.slice(1)}`;
-  if (/^254[17]\d{8}$/.test(digits)) return `+${digits}`;
-  if (/^[17]\d{8}$/.test(digits)) return `+254${digits}`;
+  if (/^0[17]\d{8}$/.test(digits)) return `254${digits.slice(1)}`;
+  if (/^254[17]\d{8}$/.test(digits)) return digits;
+  if (/^[17]\d{8}$/.test(digits)) return `254${digits}`;
   return null;
 }
 
 export default function Register() {
   const { user, register, booting } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ role: 'patient', full_name: '', email: '', phone: '', password: '', password2: '' });
+  const [form, setForm] = useState({ role: 'patient', full_name: '', email: '', phone: '', password: '', password2: '', accept_terms: false });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -41,10 +41,12 @@ export default function Register() {
     if (!phone) return setError('Enter a valid Kenyan phone number, e.g. 0712 345 678.');
     if (!passwordOk) return setError('Your password doesn’t meet all the requirements below.');
     if (form.password !== form.password2) return setError('Passwords don’t match. Use the eye icon to check what you typed.');
+    if (!form.accept_terms) return setError('Please accept the Terms of Service and Privacy Policy to continue.');
     setLoading(true);
     try {
       const me = await register({ ...form, phone });
-      navigate(me.role === 'caregiver' ? '/caregiver/profile?welcome=1' : '/patient', { replace: true });
+      navigate(me.phone_verification_required && !me.phone_verified ? '/verify-phone'
+        : me.role === 'caregiver' ? '/caregiver/profile?welcome=1' : '/welcome', { replace: true });
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -84,7 +86,7 @@ export default function Register() {
           <Field label="Email">
             <input className="input" type="email" required autoComplete="email" value={form.email} onChange={set('email')} />
           </Field>
-          <Field label="Phone (M-Pesa)">
+          <Field label="Phone (M-Pesa)" hint="We'll text you a code to verify it.">
             <input className="input" type="tel" required autoComplete="tel" placeholder="0712 345 678" value={form.phone} onChange={set('phone')} />
           </Field>
         </div>
@@ -100,6 +102,15 @@ export default function Register() {
             <PasswordMatch password={form.password} confirm={form.password2} />
           </Field>
         </div>
+
+        <label className="flex items-start gap-3 text-sm text-gray-700">
+          <input type="checkbox" className="mt-0.5 h-4 w-4 accent-brand-700" checked={form.accept_terms}
+            onChange={(e) => setForm({ ...form, accept_terms: e.target.checked })} />
+          <span>
+            I agree to Tunza's <Link to="/terms" target="_blank" className="font-semibold text-brand-700 underline">Terms of Service</Link> and{' '}
+            <Link to="/privacy" target="_blank" className="font-semibold text-brand-700 underline">Privacy Policy</Link>, including how my data is used.
+          </span>
+        </label>
 
         <Button type="submit" size="lg" className="w-full" loading={loading}>
           {form.role === 'caregiver' ? 'Join as a caregiver' : 'Create account'}

@@ -58,7 +58,11 @@ export default function AdminBookings() {
                   {kes(b.total_amount)}
                   {b.is_paid && <span className="ml-1.5 text-xs font-semibold text-emerald-700">Paid</span>}
                 </td>
-                <td className="px-4 py-3"><StatusBadge map={BOOKING_STATUS} status={b.status} /></td>
+                <td className="px-4 py-3">
+                  <StatusBadge map={BOOKING_STATUS} status={b.status} />
+                  {b.check_in_flagged && <div className="mt-1 text-xs font-semibold text-amber-700" title="GPS check-in/out more than 500 m from the care address">Check-in far from address</div>}
+                  {b.decline_reason && <div className="mt-1 text-xs text-gray-500">{b.decline_reason}</div>}
+                </td>
               </tr>
             ))}
           </Table>
@@ -99,6 +103,7 @@ function BookingModal({ booking: b, onClose, onDone }) {
         <div className="flex items-center gap-2">
           <StatusBadge map={BOOKING_STATUS} status={b.status} />
           {b.is_paid ? <Badge className="bg-emerald-50 text-emerald-700 ring-emerald-200">Paid</Badge> : <Badge>Unpaid</Badge>}
+          {b.check_in_flagged && <Badge className="bg-amber-50 text-amber-700 ring-amber-200">Check-in far from address</Badge>}
           <span className="ml-auto text-xs text-gray-400">Requested {fmtDate(b.created_at)}</span>
         </div>
         <dl className="grid grid-cols-2 gap-x-6 gap-y-3">

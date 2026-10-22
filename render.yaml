@@ -59,6 +59,18 @@ services:
         sync: false
       - key: MPESA_PASSKEY
         sync: false
+      # Private storage for caregiver ID / good conduct uploads (required:
+      # Render's disk is wiped on every deploy). Cloudinary → API Keys.
+      - key: CLOUDINARY_URL
+        sync: false
+      # Phone OTP by SMS (Africa's Talking). Until AT_API_KEY is set, phone
+      # verification stays off in production so sign-ups aren't blocked.
+      - key: AT_USERNAME
+        sync: false
+      - key: AT_API_KEY
+        sync: false
+      - key: AT_SENDER_ID
+        sync: false
 
   # ── React web app (static) ────────────────────────────────────────────────
   - type: web

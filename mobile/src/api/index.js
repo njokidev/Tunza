@@ -1,9 +1,14 @@
 import axios from 'axios';
-import * as SecureStore from 'expo-secure-store';
+import { Platform } from 'react-native';
+import * as SecureStore from '../lib/secureStore';
 
 // ── Set EXPO_PUBLIC_API_URL in mobile/.env to your machine's LAN IP when testing
 //    on a phone (e.g. http://192.168.0.104:8000/api). Falls back to localhost.
-export const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://127.0.0.1:8000/api';
+// In a browser on the same computer (`npx expo start --web`), talk to Django on
+// localhost so Wi-Fi addresses and firewalls don't matter.
+export const BASE_URL = Platform.OS === 'web'
+  ? (process.env.EXPO_PUBLIC_WEB_API_URL || 'http://localhost:8000/api')
+  : (process.env.EXPO_PUBLIC_API_URL || 'http://127.0.0.1:8000/api');
 
 const api = axios.create({
   baseURL: BASE_URL,
@@ -17,6 +22,11 @@ api.interceptors.request.use(async (config) => {
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
+
+// ── Session expiry ────────────────────────────────────────────────────────────
+// AuthContext subscribes so the app returns to Login when refreshing fails.
+const expiryListeners = new Set();
+export const onSessionExpired = (fn) => { expiryListeners.add(fn); return () => expiryListeners.delete(fn); };
 
 // ── Auto-refresh on 401 ───────────────────────────────────────────────────────
 let isRefreshing = false;
@@ -32,7 +42,9 @@ api.interceptors.response.use(
   async (error) => {
     const original = error.config;
 
-    if (error.response?.status === 401 && !original._retry) {
+    // Never try to refresh for the auth endpoints themselves (login, logout, refresh).
+    const isAuthCall = /\/auth\/(login|logout|token)/.test(original?.url || '');
+    if (error.response?.status === 401 && original && !original._retry && !isAuthCall) {
       if (isRefreshing) {
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
@@ -58,6 +70,7 @@ api.interceptors.response.use(
         // clear tokens — force re-login
         await SecureStore.deleteItemAsync('access_token');
         await SecureStore.deleteItemAsync('refresh_token');
+        expiryListeners.forEach((fn) => { try { fn(); } catch { /* ignore */ } });
         return Promise.reject(e);
       } finally {
         isRefreshing = false;
@@ -94,6 +107,18 @@ export const authApi = {
   updateMe: (data)  => api.patch('/auth/me/', data),
   notifications: () => api.get('/auth/notifications/'),
   markRead: (id)    => api.patch(`/auth/notifications/${id}/read/`),
+  // Phone OTP (Africa's Talking). In local dev the response carries `dev_code`.
+  sendPhoneCode: ()     => api.post('/auth/phone/send-code/'),
+  verifyPhone:   (code) => api.post('/auth/phone/verify/', { code }),
+  // Forgot password: identifier = phone or email
+  resetRequest:  (identifier) => api.post('/auth/password/reset/', { identifier }),
+  resetConfirm:  (data) => api.post('/auth/password/reset/confirm/', data),
+  completeOnboarding: () => api.post('/auth/onboarding/complete/'),
+  // Who the family books care for
+  recipients:      ()         => api.get('/auth/recipients/'),
+  addRecipient:    (data)     => api.post('/auth/recipients/', data),
+  updateRecipient: (id, data) => api.patch(`/auth/recipients/${id}/`, data),
+  deleteRecipient: (id)       => api.delete(`/auth/recipients/${id}/`),
 };
 
 // ── Caregivers ────────────────────────────────────────────────────────────────
@@ -104,10 +129,22 @@ export const caregiverApi = {
   updateMyProfile:  (data)   => api.patch('/caregivers/me/', data),
   me:               ()       => api.get('/caregivers/me/'),
   updateMe:         (data)   => api.patch('/caregivers/me/', data),
+  // Onboarding, after verification is approved: saves the profile and marks the step done.
+  setupProfile:     (data)   => api.post('/caregivers/me/setup-profile/', data),
   specializations:  ()       => api.get('/caregivers/specializations/'),
   availability:     ()       => api.get('/caregivers/availability/'),
   addAvailability:  (data)   => api.post('/caregivers/availability/', data),
   delAvailability:  (id)     => api.delete(`/caregivers/availability/${id}/`),
+  // Replace the whole week: slots = [{ day, start_time, end_time }]
+  saveAvailability: (slots)  => api.put('/caregivers/availability/', { slots }),
+  verification:     ()       => api.get('/caregivers/verification/'),
+  // form: FormData with id_number + files (id_front, id_back, good_conduct, nursing?, cna?, other*)
+  submitVerification: (form, onUploadProgress) => api.post('/caregivers/verification/', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000,
+    transformRequest: (data) => data, // let React Native set the multipart boundary
+    onUploadProgress,
+  }),
 };
 
 // ── Bookings ──────────────────────────────────────────────────────────────────
@@ -117,7 +154,8 @@ export const bookingApi = {
   detail:       (id)        => api.get(`/bookings/${id}/`),
   updateStatus: (id, data)  => api.patch(`/bookings/${id}/status/`, data),
   // caregiver: accepted | rejected | ongoing | completed — patient: cancelled
-  setStatus:    (id, status) => api.patch(`/bookings/${id}/status/`, { status }),
+  // extra: { latitude, longitude } for GPS check-in / check-out, { reason } when declining
+  setStatus:    (id, status, extra = {}) => api.patch(`/bookings/${id}/status/`, { status, ...extra }),
 };
 
 // ── Messaging ─────────────────────────────────────────────────────────────────
@@ -132,12 +170,14 @@ export const messageApi = {
 export const ratingApi = {
   list:   (caregiverId) => api.get('/ratings/', { params: { caregiver: caregiverId } }),
   create: (data)        => api.post('/ratings/', data),
+  rateFamily: (data)    => api.post('/ratings/family/', data),   // caregiver → family
 };
 
 // ── Payments ──────────────────────────────────────────────────────────────────
 export const paymentApi = {
   initiate: (data)      => api.post('/payments/initiate/', data),
   status:   (bookingId) => api.get(`/payments/status/${bookingId}/`),
+  wallet:   ()          => api.get('/payments/wallet/'),
 };
 
 // ── Locations ─────────────────────────────────────────────────────────────────

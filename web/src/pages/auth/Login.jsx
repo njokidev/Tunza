@@ -25,7 +25,8 @@ export default function Login() {
       const home = homeFor(me.role);
       navigate(from && from.startsWith(home) ? from : home, { replace: true });
     } catch (err) {
-      setError(err.response?.status === 401 ? 'Incorrect email or password.' : errorMessage(err));
+      const st = err.response?.status;
+      setError(st === 401 ? 'That email/phone and password don’t match.' : st === 429 ? 'Too many attempts. Wait a minute and try again.' : errorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -38,15 +39,19 @@ export default function Login() {
 
       <form onSubmit={submit} className="mt-8 space-y-4">
         {location.state?.expired && !error && <Alert kind="info">Your session expired. Please log in again.</Alert>}
+        {location.state?.reset && !error && <Alert kind="success">Password changed. Log in with your new password.</Alert>}
         <Alert>{error}</Alert>
-        <Field label="Email">
-          <input className="input" type="email" autoComplete="email" required placeholder="you@example.com"
+        <Field label="Email or phone">
+          <input className="input" type="text" autoComplete="username" required placeholder="you@example.com or 0712 345 678"
             value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
         </Field>
         <Field label="Password">
           <PasswordInput autoComplete="current-password" required
             value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
         </Field>
+        <div className="-mt-1 text-right">
+          <Link to="/forgot-password" state={{ identifier: form.email }} className="text-sm font-semibold text-brand-700 hover:underline">Forgot password?</Link>
+        </div>
         <Button type="submit" size="lg" className="w-full" loading={loading}>Log in</Button>
       </form>
 

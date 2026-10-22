@@ -26,6 +26,15 @@ export const authApi = {
   me: () => api.get('/auth/me/'),
   updateMe: (payload) => api.patch('/auth/me/', payload),
   notifications: () => api.get('/auth/notifications/'),
+  // Phone OTP (Africa's Talking); in local dev the response carries `dev_code`
+  sendPhoneCode: () => api.post('/auth/phone/send-code/'),
+  verifyPhone: (code) => api.post('/auth/phone/verify/', { code }),
+  resetRequest: (identifier) => api.post('/auth/password/reset/', { identifier }),
+  resetConfirm: (payload) => api.post('/auth/password/reset/confirm/', payload),
+  completeOnboarding: () => api.post('/auth/onboarding/complete/'),
+  recipients: () => api.get('/auth/recipients/'),
+  addRecipient: (payload) => api.post('/auth/recipients/', payload),
+  deleteRecipient: (id) => api.delete(`/auth/recipients/${id}/`),
 };
 
 export const caregiverApi = {
@@ -33,6 +42,7 @@ export const caregiverApi = {
   get: (id) => api.get(`/caregivers/${id}/`),
   me: () => api.get('/caregivers/me/'),
   updateMe: (payload) => api.patch('/caregivers/me/', payload),
+  saveAvailability: (slots) => api.put('/caregivers/availability/', { slots }),
   specializations: () => api.get('/caregivers/specializations/'),
   availability: () => api.get('/caregivers/availability/'),
   addAvailability: (payload) => api.post('/caregivers/availability/', payload),
@@ -44,8 +54,8 @@ export const bookingApi = {
   get: (id) => api.get(`/bookings/${id}/`),
   create: (payload) => api.post('/bookings/', payload),
   // caregiver: accepted | rejected | ongoing | completed — patient: cancelled
-  setStatus: (id, status, notes) =>
-    api.patch(`/bookings/${id}/status/`, notes === undefined ? { status } : { status, notes }),
+  // extra: { latitude, longitude } for GPS check-in / check-out
+  setStatus: (id, status, extra = {}) => api.patch(`/bookings/${id}/status/`, { status, ...extra }),
 };
 
 export const careRequestApi = {
@@ -79,10 +89,12 @@ export const messageApi = {
 
 export const ratingApi = {
   create: (payload) => api.post('/ratings/', payload),
+  rateFamily: (payload) => api.post('/ratings/family/', payload),
 };
 
 export const paymentApi = {
   status: (bookingId) => api.get(`/payments/status/${bookingId}/`),
+  wallet: () => api.get('/payments/wallet/'),
 };
 
 /** Admin-only endpoints (/api/admin/). Lists are paginated: { count, next, results }. */

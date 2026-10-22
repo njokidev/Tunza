@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, TouchableOpacity, Platform, Linking } from 'react-native';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE } from '../../components/MapView';
 import { LinearGradient } from 'expo-linear-gradient';
 import { locationApi } from '../../api';
+import usePolling from '../../lib/usePolling';
 import { Card, COLORS } from '../../components/ui';
 import { COLORS as C, GRADIENT, RADIUS, SHADOWS, TYPE } from '../../theme';
 
 // On Android, Google Maps crashes the app if no API key was built in. The APK
 // build sets EXPO_PUBLIC_MAPS_ENABLED=true only when a key is provided; without
 // one we show a plain background and an "Open in Google Maps" button instead.
-const MAPS_ENABLED = Platform.OS !== 'android' || process.env.EXPO_PUBLIC_MAPS_ENABLED === 'true';
+const MAPS_ENABLED = Platform.OS === 'ios' || (Platform.OS === 'android' && process.env.EXPO_PUBLIC_MAPS_ENABLED === 'true');
 
 const openInMaps = ({ latitude, longitude }) => {
   Linking.openURL(`https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`);
@@ -39,11 +40,8 @@ export default function TrackCaregiverScreen({ route, navigation }) {
     } finally { setLoading(false); }
   };
 
-  useEffect(() => {
-    fetchLocation();
-    const interval = setInterval(fetchLocation, 5000);
-    return () => clearInterval(interval);
-  }, []);
+  // Live location: every 15s, only while this map is open and the app is active.
+  usePolling(fetchLocation, 15000, []);
 
   const nairobi = { latitude: -1.286389, longitude: 36.817223, latitudeDelta: 0.05, longitudeDelta: 0.05 };
 

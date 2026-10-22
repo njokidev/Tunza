@@ -9,13 +9,16 @@ export const CARE_RECIPIENTS = [
   { value: 'disability', label: 'Person with disability', hint: 'Physical or intellectual' },
   { value: 'palliative', label: 'Palliative / end of life', hint: 'Comfort and dignity' },
   { value: 'chronic', label: 'Chronic illness', hint: 'Diabetes, stroke, kidney…' },
+  { value: 'child', label: 'A child', hint: 'Babysitting, after-school care' },
   { value: 'other', label: 'Other', hint: 'Tell us in notes' },
 ];
 
 // Used when the backend has no specializations seeded yet.
+// Names must match the Specialization rows seeded by caregivers/migrations/0003.
 export const FALLBACK_SPECIALIZATIONS = [
-  'Elderly Care', 'Dementia Care', 'Post-surgery Care', 'Disability Support', 'Palliative Care',
-].map((name, i) => ({ id: `fallback-${i}`, name }));
+  'Elderly Care', 'Personal Care', 'Companionship', 'Disability Support', 'Dementia Care',
+  'Post-surgery Care', 'Chronic Illness Care', 'Palliative Care', 'Medication Administration', 'Babysitting',
+].map((name, i) => ({ id: `fallback-${i}`, name, nurse_only: name === 'Medication Administration' }));
 
 // Matches Booking.CareType in the backend.
 export const BOOKING_CARE_TYPES = [
@@ -29,7 +32,7 @@ export const BOOKING_CARE_TYPES = [
 // Best-effort mapping from a care request to a booking care type.
 export const RECIPIENT_TO_CARE_TYPE = {
   elderly: 'daycare', dementia: 'longterm', surgery: 'postop',
-  disability: 'longterm', palliative: 'palliative', chronic: 'longterm', other: 'daycare',
+  disability: 'longterm', palliative: 'palliative', chronic: 'longterm', child: 'daycare', other: 'daycare',
 };
 
 export const SCHEDULE_TYPES = [
@@ -81,6 +84,24 @@ export const AREAS = [
   { name: 'Ruiru', lat: -1.1460, lng: 36.9600 },
   { name: 'Juja', lat: -1.1020, lng: 37.0140 },
   { name: 'Thika', lat: -1.0333, lng: 37.0693 },
+  { name: 'Roysambu', lat: -1.2180, lng: 36.8870 },
+  { name: 'Buruburu', lat: -1.2860, lng: 36.8800 },
+  { name: 'Umoja', lat: -1.2840, lng: 36.8990 },
+  { name: 'Ruaka', lat: -1.2050, lng: 36.7780 },
+  // Nakuru and Kericho (pilot); town-centre coordinates for rough distance only.
+  { name: 'Nakuru Town', lat: -0.2833, lng: 36.0667 },
+  { name: 'Milimani (Nakuru)', lat: -0.2900, lng: 36.0600 },
+  { name: 'Section 58', lat: -0.2780, lng: 36.0900 },
+  { name: 'Lanet', lat: -0.2980, lng: 36.1450 },
+  { name: 'Njoro', lat: -0.3300, lng: 35.9400 },
+  { name: 'Gilgil', lat: -0.4950, lng: 36.3200 },
+  { name: 'Naivasha', lat: -0.7167, lng: 36.4333 },
+  { name: 'Molo', lat: -0.2500, lng: 35.7333 },
+  { name: 'Kericho Town', lat: -0.3677, lng: 35.2831 },
+  { name: 'Kapsoit', lat: -0.3500, lng: 35.2300 },
+  { name: 'Litein', lat: -0.5833, lng: 35.1833 },
+  { name: 'Kipkelion', lat: -0.2000, lng: 35.4667 },
+  { name: 'Londiani', lat: -0.1667, lng: 35.6000 },
 ];
 
 export const BOOKING_STATUS = {
@@ -100,3 +121,5 @@ export const REQUEST_STATUS = {
   closed: { label: 'Closed', className: 'bg-gray-100 text-gray-600 ring-gray-200' },
   cancelled: { label: 'Cancelled', className: 'bg-gray-100 text-gray-600 ring-gray-200' },
 };
+
+export const LANGUAGES = ['English', 'Kiswahili', 'Kikuyu', 'Luo', 'Luhya', 'Kalenjin', 'Kamba', 'Kisii', 'Meru', 'Somali'];

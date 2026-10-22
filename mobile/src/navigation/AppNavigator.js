@@ -13,6 +13,9 @@ import { COLORS as C, RADIUS } from '../theme';
 // ── Auth ──────────────────────────────────────────────────────────────────────
 import LoginScreen    from '../screens/auth/LoginScreen';
 import RegisterScreen from '../screens/auth/RegisterScreen';
+import ForgotPasswordScreen from '../screens/auth/ForgotPasswordScreen';
+import VerifyPhoneScreen from '../screens/auth/VerifyPhoneScreen';
+import FamilyOnboardingScreen from '../screens/patient/FamilyOnboardingScreen';
 
 // ── Shared ────────────────────────────────────────────────────────────────────
 import BookingsScreen      from '../screens/BookingsScreen';
@@ -38,6 +41,12 @@ import CaregiverProfileScreen  from '../screens/caregiver/ProfileScreen';
 import EarningsScreen          from '../screens/caregiver/EarningsScreen';
 import OpenRequestsScreen      from '../screens/caregiver/OpenRequestsScreen';
 import ApplyToRequestScreen    from '../screens/caregiver/ApplyToRequestScreen';
+import VerificationScreen      from '../screens/caregiver/VerificationScreen';
+import SetupWaitingScreen      from '../screens/caregiver/setup/SetupWaitingScreen';
+import SetupProfileScreen      from '../screens/caregiver/setup/SetupProfileScreen';
+import SetupAreasScreen        from '../screens/caregiver/setup/SetupAreasScreen';
+import SetupAvailabilityScreen from '../screens/caregiver/setup/SetupAvailabilityScreen';
+import RateFamilyScreen        from '../screens/caregiver/RateFamilyScreen';
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
 import AdminDashboardScreen from '../screens/admin/DashboardScreen';
@@ -138,7 +147,14 @@ function RootNavigator() {
         <>
           <Stack.Screen name="Login"    component={LoginScreen} />
           <Stack.Screen name="Register" component={RegisterScreen} />
+          <Stack.Screen name="ForgotPassword" component={ForgotPasswordScreen} />
         </>
+      ) : user.role !== 'admin' && user.phone_verification_required && !user.phone_verified ? (
+        // Phone OTP before anything else (needed for M-Pesa and account safety)
+        <Stack.Screen name="VerifyPhone" component={VerifyPhoneScreen} />
+      ) : user.role === 'patient' && user.needs_onboarding ? (
+        // First-run family setup: who the care is for + home area (skippable)
+        <Stack.Screen name="FamilyOnboarding" component={FamilyOnboardingScreen} />
       ) : user.role === 'patient' ? (
         <>
           <Stack.Screen name="PatientTabs"     component={PatientTabs} />
@@ -155,10 +171,27 @@ function RootNavigator() {
           <Stack.Screen name="Review"          component={ReviewScreen} />
           <Stack.Screen name="Chat"            component={ChatScreen} options={headerStyle} />
         </>
+      ) : user.role === 'caregiver' && user.caregiver_setup?.next === 'documents' ? (
+        // New caregivers: ID, good conduct and certificates (again if rejected)
+        <Stack.Screen name="SetupDocuments" component={VerificationScreen} initialParams={{ onboarding: true }} />
+      ) : user.role === 'caregiver' && user.caregiver_setup?.next === 'verification' ? (
+        // Wait for the background check (2-3 days); moves on by itself once approved
+        <Stack.Screen name="SetupWaiting" component={SetupWaitingScreen} />
+      ) : user.role === 'caregiver' && user.caregiver_setup?.next === 'profile' ? (
+        // Approved. Step 1 of 3: bio, rate, care types, languages
+        <Stack.Screen name="SetupProfile" component={SetupProfileScreen} />
+      ) : user.role === 'caregiver' && user.caregiver_setup?.next === 'areas' ? (
+        // Step 2 of 3: where they'll work (county -> areas)
+        <Stack.Screen name="SetupAreas" component={SetupAreasScreen} />
+      ) : user.role === 'caregiver' && user.caregiver_setup?.next === 'availability' ? (
+        // Step 3 of 3: days and hours
+        <Stack.Screen name="SetupAvailability" component={SetupAvailabilityScreen} />
       ) : user.role === 'caregiver' ? (
         <>
           <Stack.Screen name="CaregiverTabs"  component={CaregiverTabs} />
           <Stack.Screen name="ApplyToRequest" component={ApplyToRequestScreen} />
+          <Stack.Screen name="Verification"   component={VerificationScreen} />
+          <Stack.Screen name="RateFamily"     component={RateFamilyScreen} />
           <Stack.Screen name="Earnings"       component={EarningsScreen} />
           <Stack.Screen name="AccountDetails" component={AccountScreen} />
           <Stack.Screen name="Chat"           component={ChatScreen} options={headerStyle} />

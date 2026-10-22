@@ -1,11 +1,15 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity } from 'react-native';
+import React, { useCallback, useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Alert, TouchableOpacity, Linking } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { authApi } from '../api';
 import { useAuth } from '../context/AuthContext';
-import { Avatar, Badge, Button, Card, Input, ScreenHeader } from '../components/ui';
+import { Avatar, Badge, Button, Card, Input, Notice, ScreenHeader } from '../components/ui';
+import { AreaPicker } from '../components/pickers';
+import RecipientForm, { emptyRecipient, recipientError, suggestedCare } from '../components/RecipientForm';
 import { COLORS as C, RADIUS, TYPE } from '../theme';
-import { errorMessage, fmtDate } from '../lib/format';
+import { AGE_GROUPS, PRIVACY_URL, TERMS_URL } from '../lib/constants';
+import { errorMessage, fmtDate, fmtPhone, normalizePhone, unwrap } from '../lib/format';
+import confirm from '../lib/confirm';
 
 /** Account details + sign out. Patients reach it from the Profile tab; caregivers from their Profile screen. */
 export default function AccountScreen({ navigation, route }) {
@@ -16,9 +20,16 @@ export default function AccountScreen({ navigation, route }) {
   const isStackScreen = route?.name === 'AccountDetails';
 
   const save = async () => {
+    const phone = normalizePhone(form.phone);
+    if (!phone) return Alert.alert('Check your phone number', 'Enter a Kenyan mobile number, e.g. 0712 345 678.');
+    if (phone !== user?.phone && user?.phone_verification_required) {
+      const ok = await new Promise((res) => Alert.alert('Change phone number?', "We'll text a code to the new number to verify it.",
+        [{ text: 'Cancel', style: 'cancel', onPress: () => res(false) }, { text: 'Continue', onPress: () => res(true) }]));
+      if (!ok) return;
+    }
     setSaving(true);
     try {
-      const { data } = await authApi.updateMe(form);
+      const { data } = await authApi.updateMe({ ...form, phone });
       updateUser(data);
       setEditMode(false);
     } catch (err) {
@@ -26,10 +37,9 @@ export default function AccountScreen({ navigation, route }) {
     } finally { setSaving(false); }
   };
 
-  const handleLogout = () => Alert.alert('Log out?', 'You will need to sign in again to use Tunza.', [
-    { text: 'Cancel', style: 'cancel' },
-    { text: 'Log out', style: 'destructive', onPress: logout },
-  ]);
+  const handleLogout = async () => {
+    if (await confirm('Log out?', 'You will need to sign in again to use Tunza.', 'Log out', { destructive: true })) logout();
+  };
 
   const shortcuts = user?.role === 'patient' ? [
     { icon: 'clipboard', label: 'My care requests', onPress: () => navigation.navigate('MyRequests') },
@@ -39,7 +49,7 @@ export default function AccountScreen({ navigation, route }) {
 
   const info = [
     { label: 'Email', value: user?.email },
-    { label: 'Phone', value: user?.phone || '—' },
+    { label: 'Phone', value: user?.phone ? `${fmtPhone(user.phone)}${user.phone_verified ? '  ✓' : ''}` : '—', color: user?.phone_verified ? C.success : undefined },
     { label: 'Account', value: user?.is_verified ? 'Verified' : 'Pending verification', color: user?.is_verified ? C.success : C.warning },
     { label: 'Member since', value: user?.date_joined ? fmtDate(user.date_joined) : '—' },
   ];
@@ -84,6 +94,9 @@ export default function AccountScreen({ navigation, route }) {
           </Card>
         ) : null}
 
+        {user?.role === 'patient' ? <HomeCard /> : null}
+        {user?.role === 'patient' ? <PeopleCard /> : null}
+
         <Card noPad>
           {info.map((item, i) => (
             <View key={item.label} style={[s.row, i > 0 && s.divider]}>
@@ -93,13 +106,125 @@ export default function AccountScreen({ navigation, route }) {
           ))}
         </Card>
 
+        <View style={s.legal}>
+          <Text style={s.legalLink} onPress={() => Linking.openURL(TERMS_URL)}>Terms of Service</Text>
+          <Text style={TYPE.caption}>·</Text>
+          <Text style={s.legalLink} onPress={() => Linking.openURL(PRIVACY_URL)}>Privacy Policy</Text>
+        </View>
+        {user?.terms_accepted_at ? <Text style={[TYPE.micro, { textAlign: 'center', marginTop: -6 }]}>Accepted {fmtDate(user.terms_accepted_at)}</Text> : null}
+
         <Button title="Log out" variant="danger-soft" iconName="log-out" onPress={handleLogout} />
       </View>
     </ScrollView>
   );
 }
 
+/** Family's home area + street — pre-fills care requests. */
+function HomeCard() {
+  const { user, updateUser } = useAuth();
+  const [edit, setEdit] = useState(false);
+  const [home, setHome] = useState({});
+  const [busy, setBusy] = useState(false);
+  const open = () => {
+    setHome({ location_name: user?.home_area || '', latitude: user?.home_latitude, longitude: user?.home_longitude, address: user?.home_address || '' });
+    setEdit(true);
+  };
+  const save = async () => {
+    setBusy(true);
+    try {
+      const { data } = await authApi.updateMe({ home_area: home.location_name, home_address: home.address.trim(),
+        home_latitude: home.latitude, home_longitude: home.longitude });
+      updateUser(data);
+      setEdit(false);
+    } catch (e) {
+      Alert.alert('Could not save', errorMessage(e));
+    } finally { setBusy(false); }
+  };
+  return (
+    <Card>
+      <View style={s.cardHead}>
+        <Text style={[TYPE.h4, { flex: 1 }]}>Home address</Text>
+        {!edit ? <TouchableOpacity onPress={open} hitSlop={8}><Text style={s.action}>{user?.home_area ? 'Change' : 'Add'}</Text></TouchableOpacity> : null}
+      </View>
+      {!edit ? (
+        <Text style={TYPE.body}>{user?.home_area ? `${user.home_address ? `${user.home_address}, ` : ''}${user.home_area}` : 'Add where care usually happens so we can fill it in for you.'}</Text>
+      ) : (
+        <>
+          <AreaPicker value={home} onChange={(loc) => setHome((h) => ({ ...h, ...loc }))} />
+          <Input label="Estate, street or building" value={home.address} onChangeText={(address) => setHome((h) => ({ ...h, address }))}
+            iconName="home" containerStyle={{ marginTop: 16, marginBottom: 12 }} />
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <Button title="Cancel" variant="outline" size="sm" onPress={() => setEdit(false)} style={{ flex: 1 }} />
+            <Button title="Save" size="sm" onPress={save} loading={busy} style={{ flex: 1 }} />
+          </View>
+        </>
+      )}
+    </Card>
+  );
+}
+
+/** The people this family books care for. */
+function PeopleCard() {
+  const [people, setPeople] = useState([]);
+  const [adding, setAdding] = useState(false);
+  const [draft, setDraft] = useState(emptyRecipient);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => authApi.recipients().then((r) => setPeople(unwrap(r.data))).catch(() => {}), []);
+  useEffect(() => { load(); }, [load]);
+  const add = async () => {
+    const err = recipientError(draft);
+    if (err) return setError(err);
+    setBusy(true);
+    try {
+      await authApi.addRecipient({ ...draft, care_recipient: suggestedCare(draft) });
+      setAdding(false); setDraft(emptyRecipient); setError('');
+      load();
+    } catch (e) { setError(errorMessage(e)); } finally { setBusy(false); }
+  };
+  const remove = (p) => Alert.alert(`Remove ${p.is_self ? 'yourself' : p.name}?`, 'Past bookings are not affected.', [
+    { text: 'Cancel', style: 'cancel' },
+    { text: 'Remove', style: 'destructive', onPress: () => authApi.deleteRecipient(p.id).then(load).catch((e) => Alert.alert('Could not remove', errorMessage(e))) },
+  ]);
+  return (
+    <Card>
+      <View style={s.cardHead}>
+        <Text style={[TYPE.h4, { flex: 1 }]}>People you book care for</Text>
+        {!adding ? <TouchableOpacity onPress={() => setAdding(true)} hitSlop={8}><Text style={s.action}>Add</Text></TouchableOpacity> : null}
+      </View>
+      {people.length === 0 && !adding ? <Text style={TYPE.body}>No one saved yet.</Text> : null}
+      {people.map((p, i) => (
+        <View key={p.id} style={[s.person, i > 0 && s.divider]}>
+          <Feather name={p.is_self ? 'user' : 'users'} size={16} color={C.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={TYPE.label}>{p.is_self ? 'Me' : p.name}</Text>
+            <Text style={TYPE.caption}>{[p.relationship, AGE_GROUPS.find((a) => a.value === p.age_group)?.label].filter(Boolean).join(' · ')}</Text>
+          </View>
+          <TouchableOpacity onPress={() => remove(p)} hitSlop={8} accessibilityLabel={`Remove ${p.name}`}>
+            <Feather name="trash-2" size={16} color={C.textFaint} />
+          </TouchableOpacity>
+        </View>
+      ))}
+      {adding ? (
+        <View style={{ marginTop: 12 }}>
+          <RecipientForm value={draft} onChange={(r) => { setDraft(r); setError(''); }} />
+          {error ? <Notice style={{ marginTop: 12 }}>{error}</Notice> : null}
+          <View style={{ flexDirection: 'row', gap: 8, marginTop: 14 }}>
+            <Button title="Cancel" variant="outline" size="sm" onPress={() => { setAdding(false); setDraft(emptyRecipient); }} style={{ flex: 1 }} />
+            <Button title="Save" size="sm" onPress={add} loading={busy} style={{ flex: 1 }} />
+          </View>
+        </View>
+      ) : null}
+    </Card>
+  );
+}
+
 const s = StyleSheet.create({
+  cardHead: { flexDirection: 'row', alignItems: 'center', marginBottom: 10 },
+  action:   { fontSize: 13, fontWeight: '700', color: C.primary },
+  person:   { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
+  legal:    { flexDirection: 'row', justifyContent: 'center', gap: 8 },
+  legalLink:{ fontSize: 12, fontWeight: '600', color: C.textMuted, textDecorationLine: 'underline' },
   hero:    { flexDirection: 'row', alignItems: 'center', gap: 14 },
   editBtn: { width: 38, height: 38, borderRadius: RADIUS.md, backgroundColor: C.primaryXLight, alignItems: 'center', justifyContent: 'center' },
   row:     { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, paddingVertical: 14 },

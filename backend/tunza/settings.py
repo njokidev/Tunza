@@ -118,6 +118,14 @@ STORAGES = {
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# ── Cloudinary (private storage for caregiver verification documents) ───────
+# Format: cloudinary://<api_key>:<api_secret>@<cloud_name>  (Cloudinary dashboard → API Keys)
+# Leave empty locally to store documents in MEDIA_ROOT instead.
+CLOUDINARY_URL = config('CLOUDINARY_URL', default='')
+if CLOUDINARY_URL:
+    import os
+    os.environ.setdefault('CLOUDINARY_URL', CLOUDINARY_URL)
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ── REST Framework ────────────────────────────────────────────────────────────
@@ -135,7 +143,20 @@ REST_FRAMEWORK = {
     ),
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
+    # Scoped limits on the endpoints people could hammer (see accounts/views.py).
+    # Counted per user when signed in, per IP otherwise.
+    'DEFAULT_THROTTLE_RATES': {
+        'login':     config('THROTTLE_LOGIN', default='10/min'),
+        'register':  config('THROTTLE_REGISTER', default='10/hour'),
+        'otp':       config('THROTTLE_OTP', default='5/hour'),
+        'otp_check': config('THROTTLE_OTP_CHECK', default='20/hour'),
+        'reset':     config('THROTTLE_RESET', default='5/hour'),
+    },
 }
+# Render's proxy puts the client IP first in X-Forwarded-For; count that, not the proxy.
+NUM_PROXIES = 1 if RENDER_EXTERNAL_HOSTNAME else None
+if NUM_PROXIES:
+    REST_FRAMEWORK['NUM_PROXIES'] = NUM_PROXIES
 
 # ── JWT ───────────────────────────────────────────────────────────────────────
 SIMPLE_JWT = {
@@ -170,6 +191,28 @@ if not DEBUG:
     CSRF_COOKIE_SECURE = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
     SECURE_HSTS_SECONDS = 3600
+
+# ── Onboarding ────────────────────────────────────────────────────────────────
+# Bump when the Terms / Privacy Policy change; each user's accepted version is stored.
+TERMS_VERSION = config('TERMS_VERSION', default='2026-10')
+# Africa's Talking SMS for phone OTP (accounts/sms.py). Without AT_API_KEY, codes are
+# only logged (and returned by the API when DEBUG is on).
+AT_USERNAME  = config('AT_USERNAME', default='sandbox')
+AT_API_KEY   = config('AT_API_KEY', default='')
+AT_SENDER_ID = config('AT_SENDER_ID', default='')
+# None = automatic (on when AT_API_KEY is set, or DEBUG). Set True/False to force.
+_pvr = config('PHONE_VERIFICATION_REQUIRED', default='')
+PHONE_VERIFICATION_REQUIRED = None if _pvr == '' else _pvr.lower() in ('1', 'true', 'yes')
+
+# ── Bookings ──────────────────────────────────────────────────────────────────
+BOOKING_AUTO_DECLINE_MINUTES = config('BOOKING_AUTO_DECLINE_MINUTES', default=30, cast=int)
+# Family pays before the visit once M-Pesa collection is live. Until then the
+# address/phone unlock when the caregiver accepts.
+MPESA_COLLECTION_LIVE = config('MPESA_COLLECTION_LIVE', default=False, cast=bool)
+# Earnings stay "on hold" this long after a visit ends (time for the family to raise an issue).
+EARNINGS_HOLD_HOURS = config('EARNINGS_HOLD_HOURS', default=24, cast=int)
+# GPS check-in further than this from the care address is flagged for admins.
+CHECKIN_MAX_DISTANCE_M = config('CHECKIN_MAX_DISTANCE_M', default=500, cast=int)
 
 # ── M-Pesa ────────────────────────────────────────────────────────────────────
 MPESA_CONSUMER_KEY = config('MPESA_CONSUMER_KEY', default='')

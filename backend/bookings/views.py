@@ -2,17 +2,21 @@ from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from accounts.models import Notification
-from accounts.permissions import IsPatient, IsCaregiver, IsAdmin
+from rest_framework.permissions import IsAuthenticated
+from accounts.permissions import IsPatient, IsCaregiver, IsAdmin, PhoneVerified
 from .models import Booking
 from payments.models import Payment
 from .serializers import BookingSerializer, BookingStatusSerializer
-from .services import can_transition, allowed_next
+from django.utils import timezone
+from .services import can_transition, allowed_next, expire_stale_requests, record_position, reopen_care_request
 
 
 class BookingListCreateView(generics.ListCreateAPIView):
     serializer_class = BookingSerializer
+    permission_classes = [IsAuthenticated, PhoneVerified]
 
     def get_queryset(self):
+        expire_stale_requests()
         user = self.request.user
         if user.role == 'patient':
             return Booking.objects.filter(patient=user).select_related('caregiver__user')
@@ -35,6 +39,7 @@ class BookingDetailView(generics.RetrieveAPIView):
     serializer_class = BookingSerializer
 
     def get_queryset(self):
+        expire_stale_requests()
         user = self.request.user
         if user.role == 'patient':
             return Booking.objects.filter(patient=user)
@@ -47,6 +52,7 @@ class UpdateBookingStatusView(APIView):
     """Caregiver accepts/rejects; patient cancels."""
 
     def patch(self, request, pk):
+        expire_stale_requests()  # a request past its reply window can't be accepted any more
         user = request.user
         try:
             if user.role == 'caregiver':
@@ -60,14 +66,37 @@ class UpdateBookingStatusView(APIView):
 
         new_status = request.data.get('status')
         if not can_transition(user.role, booking.status, new_status):
+            detail = f'Cannot change a {booking.status} booking to {new_status}.'
+            if booking.status == Booking.Status.REJECTED and booking.decline_reason:
+                detail = f'This request was declined automatically ({booking.decline_reason.lower()}).'
             return Response({
-                'detail': f'Cannot change a {booking.status} booking to {new_status}.',
+                'detail': detail,
                 'allowed': allowed_next(user.role, booking.status),
             }, status=status.HTTP_400_BAD_REQUEST)
 
+        # Start and end of a visit need the PIN the family gives the caregiver on the day.
+        if user.role == 'caregiver' and new_status in (Booking.Status.ONGOING, Booking.Status.COMPLETED):
+            pin_error = check_visit_pin(booking, new_status, request.data.get('pin'))
+            if pin_error:
+                return pin_error
+
+        now = timezone.now()
         booking.status = new_status
         booking.notes  = request.data.get('notes', booking.notes)
+        if new_status == Booking.Status.ACCEPTED:
+            booking.accepted_at = now
+            booking.issue_pins()
+        elif new_status == Booking.Status.ONGOING:
+            # GPS check-in: the app sends where the phone is when the visit starts
+            record_position(booking, 'in', request.data.get('latitude'), request.data.get('longitude'))
+        elif new_status == Booking.Status.COMPLETED:
+            booking.completed_at = now
+            record_position(booking, 'out', request.data.get('latitude'), request.data.get('longitude'))
+        elif new_status in (Booking.Status.REJECTED, Booking.Status.CANCELLED) and user.role == 'caregiver':
+            booking.decline_reason = (request.data.get('reason') or '')[:200]
         booking.save()
+        if new_status in (Booking.Status.REJECTED, Booking.Status.CANCELLED):
+            reopen_care_request(booking)
 
         if new_status == Booking.Status.COMPLETED:
             # PILOT PLACEHOLDER: no money moves here. This marks the visit paid so the
@@ -97,6 +126,12 @@ class UpdateBookingStatusView(APIView):
         label = new_status.capitalize()
         patient_msg   = f'Your booking with {booking.caregiver.user.full_name} was {new_status}.'
         caregiver_msg = f'Your booking with {booking.patient.full_name} was {new_status}.'
+        if new_status == Booking.Status.ACCEPTED:
+            patient_msg += (f' Your start PIN is {booking.start_pin}. Give it to the caregiver only when '
+                            'they arrive. Find it any time under Bookings.')
+        elif new_status == Booking.Status.ONGOING:
+            patient_msg = (f'{booking.caregiver.user.full_name} has started the visit. Your end PIN is '
+                           f'{booking.end_pin}. Give it to them only when the visit is finished.')
         if user.role in ('caregiver', 'admin'):
             Notification.objects.create(user=booking.patient, title=f'Booking {label}',
                                         body=patient_msg, type='booking')
@@ -104,6 +139,39 @@ class UpdateBookingStatusView(APIView):
             Notification.objects.create(user=booking.caregiver.user, title=f'Booking {label}',
                                         body=caregiver_msg, type='booking')
         return Response(BookingSerializer(booking, context={'request': request}).data)
+
+
+def check_visit_pin(booking, new_status, pin):
+    """None if the PIN is right, else the error Response. Wrong tries are counted;
+    after Booking.MAX_PIN_ATTEMPTS the booking locks until Tunza support helps."""
+    which = 'start' if new_status == Booking.Status.ONGOING else 'end'
+    expected = booking.start_pin if which == 'start' else booking.end_pin
+    if booking.pin_locked:
+        return Response({'detail': 'Too many wrong PINs. Contact Tunza support to continue this visit.',
+                         'code': 'pin_locked'}, status=status.HTTP_423_LOCKED)
+    if not expected:  # booking accepted before PINs existed and never backfilled
+        booking.issue_pins()
+        booking.save(update_fields=['start_pin', 'end_pin', 'pin_attempts'])
+        return Response({'detail': 'A PIN has just been sent to the family. Ask them for it.',
+                         'code': 'pin_issued'}, status=status.HTTP_400_BAD_REQUEST)
+    pin = str(pin or '').strip()
+    if not pin:
+        return Response({'detail': f'Enter the {which} PIN from the family.', 'code': 'pin_required'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    if pin != expected:
+        booking.pin_attempts += 1
+        booking.save(update_fields=['pin_attempts'])
+        left = Booking.MAX_PIN_ATTEMPTS - booking.pin_attempts
+        if left <= 0:
+            Notification.objects.create(
+                user=booking.patient, type='booking', title='Visit PIN locked',
+                body='The caregiver entered a wrong PIN too many times. Tunza support will contact you.')
+            return Response({'detail': 'Too many wrong PINs. Contact Tunza support to continue this visit.',
+                             'code': 'pin_locked'}, status=status.HTTP_423_LOCKED)
+        return Response({'detail': f'Wrong PIN. {left} tr{"y" if left == 1 else "ies"} left.',
+                         'code': 'pin_wrong', 'attempts_left': left}, status=status.HTTP_400_BAD_REQUEST)
+    booking.pin_attempts = 0
+    return None
 
 
 class AdminBookingListView(generics.ListAPIView):

@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { bookingApi, careRequestApi } from '../../api';
+import { useAuth } from '../../context/AuthContext';
 import { Avatar, Button, Card, Chip, Input, Notice, Rating, ScreenHeader, VerifiedBadge } from '../../components/ui';
 import { DateStrip, TimeChips } from '../../components/pickers';
 import { COLORS as C, SHADOWS, TYPE } from '../../theme';
@@ -26,6 +27,7 @@ const closest = (n) => DURATIONS.reduce((a, b) => (Math.abs(b - n) < Math.abs(a 
 export default function BookCaregiverScreen({ route, navigation }) {
   const { caregiver, request: passedRequest, requestId } = route.params;
   const insets = useSafeAreaInsets();
+  const { user } = useAuth();
   const [careRequest, setCareRequest] = useState(passedRequest ?? null);
 
   // Came from Smart Match / applications with only an id → look the request up.
@@ -40,7 +42,7 @@ export default function BookCaregiverScreen({ route, navigation }) {
     care_type: 'daycare',
     ...firstSlot(),
     hours: 8,
-    address: '',
+    address: user?.home_area ? [user.home_address, user.home_area].filter(Boolean).join(', ') : '',
     special_needs: '',
   });
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
@@ -65,7 +67,13 @@ export default function BookCaregiverScreen({ route, navigation }) {
 
   const startISO = nairobiISO(form.day, form.time);
   const end = useMemo(() => new Date(new Date(startISO).getTime() + form.hours * 36e5), [startISO, form.hours]);
-  const estimate = form.hours * Number(caregiver.hourly_rate || 0);
+  // Same rule as Booking.calculate_amount on the server: shift prices for overnight / 10 h+ days.
+  const nightRate = Number(caregiver.night_shift_rate || 0);
+  const dayRate = Number(caregiver.day_shift_rate || 0);
+  const shifts = Math.max(1, Math.round(form.hours / 12));
+  const estimate = form.care_type === 'overnight' && nightRate ? nightRate * shifts
+    : form.hours >= 10 && dayRate ? dayRate * shifts
+      : form.hours * Number(caregiver.hourly_rate || 0);
   const nowHour = form.day === todayISODate() ? `${String(new Date().getHours()).padStart(2, '0')}:00` : null;
 
   const submit = async () => {
@@ -81,12 +89,12 @@ export default function BookCaregiverScreen({ route, navigation }) {
         end_date: end.toISOString(),
         address: form.address.trim(),
         special_needs: form.special_needs,
-        latitude: careRequest?.latitude ?? null,
-        longitude: careRequest?.longitude ?? null,
+        latitude: careRequest?.latitude ?? user?.home_latitude ?? null,
+        longitude: careRequest?.longitude ?? user?.home_longitude ?? null,
       });
       Alert.alert(
         'Booking request sent',
-        `${firstName(caregiver.user?.full_name)} will confirm shortly. You'll get a notification when they respond.`,
+        `${firstName(caregiver.user?.full_name)} has 30 minutes to accept. You'll get a notification when they respond — if they don't, the request is cancelled and you can pick someone else.`,
         [{ text: 'View my bookings', onPress: () => navigation.navigate('PatientTabs', { screen: 'Bookings' }) }],
       );
     } catch (e) {

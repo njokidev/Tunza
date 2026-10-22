@@ -5,11 +5,13 @@ import {
 import { Feather } from '@expo/vector-icons';
 import { authApi, caregiverApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
-import { Avatar, Badge, Button, Card, Chip, Input, LoadingScreen, Notice, ScreenHeader } from '../../components/ui';
-import { AreaPicker, TimeChips } from '../../components/pickers';
+import { Avatar, Button, Card, Chip, Input, LoadingScreen, Notice, ScreenHeader, StatusPill } from '../../components/ui';
+import { WorkAreasPicker } from '../../components/pickers';
+import WeekAvailability, { slotsFromWeek, weekFromSlots } from '../../components/WeekAvailability';
 import { COLORS as C, RADIUS, SHADOWS, TYPE } from '../../theme';
-import { DAYS, DAYS_LONG } from '../../lib/constants';
-import { errorMessage, fmtShortTime, unwrap } from '../../lib/format';
+import { AREAS, LANGUAGES, VERIFICATION_STATUS, isNurseOnly } from '../../lib/constants';
+import { errorMessage, fmtPhone, normalizePhone, unwrap } from '../../lib/format';
+import confirm from '../../lib/confirm';
 
 const levelFor = (years) => (years >= 5 ? 'senior' : years >= 2 ? 'mid' : 'junior');
 
@@ -17,9 +19,11 @@ const levelFor = (years) => (years >= 5 ? 'senior' : years >= 2 ? 'mid' : 'junio
 export default function CaregiverProfileScreen({ navigation }) {
   const { user, updateUser, logout } = useAuth();
   const [form, setForm] = useState(null);
-  const [account, setAccount] = useState({ full_name: user?.full_name ?? '', phone: user?.phone ?? '' });
+  const [account, setAccount] = useState({ full_name: user?.full_name ?? '', phone: fmtPhone(user?.phone) });
   const [specs, setSpecs] = useState([]);
-  const [slots, setSlots] = useState([]);
+  const [week, setWeek] = useState(weekFromSlots([]));
+  const [savedWeek, setSavedWeek] = useState('');
+  const [verification, setVerification] = useState({ status: 'not_submitted', nurse: false });
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState({ kind: '', text: '' });
 
@@ -28,23 +32,30 @@ export default function CaregiverProfileScreen({ navigation }) {
       const [p, sp, av] = await Promise.all([caregiverApi.me(), caregiverApi.specializations(), caregiverApi.availability()]);
       const prof = p.data;
       setSpecs(unwrap(sp.data));
-      setSlots(unwrap(av.data).sort((a, b) => a.day - b.day));
+      const w = weekFromSlots(unwrap(av.data));
+      setWeek(w);
+      setSavedWeek(JSON.stringify(w));
       setForm({
         bio: prof.bio ?? '',
         years_exp: String(prof.years_exp ?? 0),
         hourly_rate: String(Math.round(Number(prof.hourly_rate ?? 500))),
         is_available: prof.is_available ?? true,
-        id_number: '',
-        location_name: prof.location_name ?? '',
-        latitude: prof.latitude,
-        longitude: prof.longitude,
+        work_areas: prof.work_areas?.length ? prof.work_areas : (prof.location_name ? [prof.location_name] : []),
+        languages: prof.languages ?? [],
+        gender: prof.gender ?? '',
+        day_shift_rate: prof.day_shift_rate ? String(Math.round(Number(prof.day_shift_rate))) : '',
+        night_shift_rate: prof.night_shift_rate ? String(Math.round(Number(prof.night_shift_rate))) : '',
+        payout_phone: prof.payout_phone ? fmtPhone(prof.payout_phone) : '',
         specialization_ids: (prof.specializations ?? []).map((s) => s.id),
       });
+      setVerification({ status: prof.verification_status ?? 'not_submitted', nurse: !!prof.nurse_verified });
     } catch (e) {
       setStatus({ kind: 'error', text: errorMessage(e) });
     }
   }, []);
 
+  // Reload when coming back from the verification screen.
+  useEffect(() => navigation.addListener('focus', () => { if (form) load(); }), [navigation, form, load]);
   useEffect(() => { load(); }, [load]);
 
   if (!form) {
@@ -58,7 +69,14 @@ export default function CaregiverProfileScreen({ navigation }) {
   }
 
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
-  const toggleSpec = (id) => set({
+  const toggleSpec = (sp) => {
+    if (isNurseOnly(sp.name) && !verification.nurse) {
+      Alert.alert('Verified nurses only', 'Medication administration is only for caregivers whose nursing or CNA certificate Tunza has verified. Upload it on the verification screen.');
+      return;
+    }
+    toggleSpecId(sp.id);
+  };
+  const toggleSpecId = (id) => set({
     specialization_ids: form.specialization_ids.includes(id)
       ? form.specialization_ids.filter((x) => x !== id)
       : [...form.specialization_ids, id],
@@ -69,14 +87,36 @@ export default function CaregiverProfileScreen({ navigation }) {
     setStatus({ kind: '', text: '' });
     try {
       const years = Number(form.years_exp) || 0;
-      const payload = { ...form, years_exp: years, experience: levelFor(years), hourly_rate: Number(form.hourly_rate) || 0 };
-      if (!payload.id_number) delete payload.id_number;
+      // Home base for distance = the first work area we have coordinates for.
+      const base = form.work_areas.map((n) => AREAS.find((a) => a.name.toLowerCase() === n.toLowerCase())).find(Boolean);
+      const specIds = form.specialization_ids.filter((id) => {
+        const sp = specs.find((x) => x.id === id);
+        return verification.nurse || !sp || !isNurseOnly(sp.name);
+      });
+      if (form.payout_phone && !normalizePhone(form.payout_phone)) {
+        throw { response: { data: { detail: 'Payout number: enter a Kenyan M-Pesa number, e.g. 0712 345 678.' } } };
+      }
+      const payload = {
+        ...form, specialization_ids: specIds,
+        day_shift_rate: Number(form.day_shift_rate) || null,
+        night_shift_rate: Number(form.night_shift_rate) || null,
+        payout_phone: form.payout_phone ? normalizePhone(form.payout_phone) : '', years_exp: years, experience: levelFor(years), hourly_rate: Number(form.hourly_rate) || 0,
+        location_name: form.work_areas[0] ?? '',
+        ...(base ? { latitude: base.lat, longitude: base.lng } : {}),
+      };
       await caregiverApi.updateMe(payload);
-      if (account.full_name !== user.full_name || account.phone !== (user.phone ?? '')) {
-        const { data: me } = await authApi.updateMe(account);
+      if (JSON.stringify(week) !== savedWeek) {
+        const { data: slots } = await caregiverApi.saveAvailability(slotsFromWeek(week));
+        const w = weekFromSlots(slots);
+        setWeek(w);
+        setSavedWeek(JSON.stringify(w));
+      }
+      const phone = normalizePhone(account.phone);
+      if (account.full_name !== user.full_name || phone !== (user.phone ?? null)) {
+        if (!phone) throw { response: { data: { detail: 'Phone: enter a Kenyan mobile number, e.g. 0712 345 678.' } } };
+        const { data: me } = await authApi.updateMe({ full_name: account.full_name, phone });
         updateUser(me);
       }
-      set({ id_number: '' });
       setStatus({ kind: 'success', text: 'Profile saved. Families see your changes right away.' });
     } catch (e) {
       setStatus({ kind: 'error', text: errorMessage(e) });
@@ -97,7 +137,8 @@ export default function CaregiverProfileScreen({ navigation }) {
             <View style={{ flex: 1 }}>
               <Text style={TYPE.h4}>{user?.full_name}</Text>
               <View style={{ flexDirection: 'row', gap: 6, marginTop: 4 }}>
-                {user?.is_verified ? <Badge label="verified" /> : <Badge label="pending" />}
+                <StatusPill map={VERIFICATION_STATUS} status={user?.is_verified ? 'approved' : verification.status} />
+                {verification.nurse ? <StatusPill map={{ n: { label: 'Verified nurse', bg: C.primaryXLight, fg: C.primary } }} status="n" /> : null}
               </View>
             </View>
             <TouchableOpacity onPress={() => navigation.navigate('Earnings')} style={s.smallBtn}>
@@ -106,6 +147,9 @@ export default function CaregiverProfileScreen({ navigation }) {
           </Card>
 
           {status.text ? <Notice kind={status.kind}>{status.text}</Notice> : null}
+
+          {/* Verification */}
+          {!user?.is_verified ? <VerificationCard status={verification.status} onPress={() => navigation.navigate('Verification')} /> : null}
 
           {/* Visibility */}
           <Card style={s.switchRow}>
@@ -137,13 +181,39 @@ export default function CaregiverProfileScreen({ navigation }) {
                 onChangeText={(t) => set({ years_exp: t.replace(/\D/g, '') })} containerStyle={{ flex: 1, marginBottom: 0 }} />
             </View>
             <Text style={[TYPE.caption, { marginTop: 8 }]}>Most Nairobi caregivers charge KES 400–1,000 per hour.</Text>
+            <Text style={[s.sub, { marginTop: 16 }]}>Shift prices <Text style={TYPE.caption}>(optional)</Text></Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <Input label="12-hour day (KES)" keyboardType="number-pad" value={form.day_shift_rate} placeholder="e.g. 3500"
+                onChangeText={(t) => set({ day_shift_rate: t.replace(/\D/g, '') })} containerStyle={{ flex: 1, marginBottom: 0 }} />
+              <Input label="Overnight (KES)" keyboardType="number-pad" value={form.night_shift_rate} placeholder="e.g. 3000"
+                onChangeText={(t) => set({ night_shift_rate: t.replace(/\D/g, '') })} containerStyle={{ flex: 1, marginBottom: 0 }} />
+            </View>
+            <Text style={[TYPE.caption, { marginTop: 8 }]}>Used instead of the hourly rate for full-day and overnight bookings.</Text>
           </Card>
 
-          {/* Area */}
+          {/* Languages & gender */}
           <Card>
-            <Text style={s.h}>Where you work</Text>
-            <Text style={[TYPE.caption, { marginBottom: 12 }]}>Distance is part of the match score and shows on open jobs.</Text>
-            <AreaPicker value={form} onChange={(loc) => set(loc)} />
+            <Text style={s.h}>Languages you speak</Text>
+            <View style={s.wrap}>
+              {LANGUAGES.map((l) => (
+                <Chip key={l} label={l} active={form.languages.includes(l)}
+                  onPress={() => set({ languages: form.languages.includes(l) ? form.languages.filter((x) => x !== l) : [...form.languages, l] })} />
+              ))}
+            </View>
+            <Text style={[s.sub, { marginTop: 16 }]}>Gender</Text>
+            <View style={s.wrap}>
+              {[['female', 'Female'], ['male', 'Male']].map(([v, l]) => (
+                <Chip key={v} label={l} active={form.gender === v} onPress={() => set({ gender: form.gender === v ? '' : v })} />
+              ))}
+            </View>
+            <Text style={[TYPE.caption, { marginTop: 8 }]}>Some families ask for a caregiver of a particular gender or language.</Text>
+          </Card>
+
+          {/* Areas */}
+          <Card>
+            <Text style={s.h}>Areas you work in</Text>
+            <Text style={[TYPE.caption, { marginBottom: 12 }]}>Pick every area you can travel to. Jobs in these areas show first and rank you higher in Smart Match.</Text>
+            <WorkAreasPicker value={form.work_areas} onChange={(work_areas) => set({ work_areas })} />
           </Card>
 
           {/* Specialties */}
@@ -151,23 +221,35 @@ export default function CaregiverProfileScreen({ navigation }) {
             <Text style={s.h}>Specialties</Text>
             <Text style={[TYPE.caption, { marginBottom: 12 }]}>Specialty is the biggest part of the match score.</Text>
             <View style={s.wrap}>
-              {specs.length === 0 ? <Text style={TYPE.body}>No specialties set up yet.</Text> : specs.map((sp) => (
-                <Chip key={sp.id} label={sp.name} active={form.specialization_ids.includes(sp.id)} onPress={() => toggleSpec(sp.id)} />
-              ))}
+              {specs.length === 0 ? <Text style={TYPE.body}>No specialties set up yet.</Text> : specs.map((sp) => {
+                const locked = isNurseOnly(sp.name) && !verification.nurse;
+                return (
+                  <Chip key={sp.id} label={sp.name} active={form.specialization_ids.includes(sp.id) && !locked}
+                    iconName={locked ? 'lock' : undefined} onPress={() => toggleSpec(sp)}
+                    style={locked ? { opacity: 0.6 } : undefined} />
+                );
+              })}
             </View>
           </Card>
 
-          {/* Availability (saves immediately) */}
-          <AvailabilityEditor slots={slots} setSlots={setSlots} />
+          {/* Availability */}
+          <WeekAvailability week={week} onChange={setWeek} />
 
-          {/* Verification */}
-          {!user?.is_verified ? (
-            <Card>
-              <Text style={s.h}>Verification</Text>
-              <Input label="National ID number" keyboardType="number-pad" value={form.id_number}
-                onChangeText={(t) => set({ id_number: t.replace(/\D/g, '').slice(0, 10) })}
-                placeholder="e.g. 12345678" hint="Tunza checks your ID before families can find you." containerStyle={{ marginBottom: 0 }} />
-            </Card>
+          {/* Payouts */}
+          <Card>
+            <Text style={s.h}>M-Pesa payout number</Text>
+            <Input value={form.payout_phone} keyboardType="phone-pad" placeholder={fmtPhone(user?.phone) || '0712 345 678'}
+              onChangeText={(payout_phone) => set({ payout_phone })} iconName="smartphone"
+              hint={form.payout_phone ? 'Tunza sends your earnings to this number.' : `Leave empty to be paid on your account phone (${fmtPhone(user?.phone)}).`}
+              containerStyle={{ marginBottom: 0 }} />
+          </Card>
+
+          {user?.is_verified ? (
+            <TouchableOpacity onPress={() => navigation.navigate('Verification')} style={s.linkRow}>
+              <Feather name="shield" size={17} color={C.success} />
+              <Text style={[TYPE.label, { flex: 1 }]}>Verification & documents</Text>
+              <Feather name="chevron-right" size={18} color={C.textFaint} />
+            </TouchableOpacity>
           ) : null}
 
           <TouchableOpacity onPress={() => navigation.navigate('AccountDetails')} style={s.linkRow}>
@@ -176,7 +258,7 @@ export default function CaregiverProfileScreen({ navigation }) {
             <Feather name="chevron-right" size={18} color={C.textFaint} />
           </TouchableOpacity>
           <Button title="Log out" variant="danger-soft" iconName="log-out"
-            onPress={() => Alert.alert('Log out?', 'You will need to sign in again.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Log out', style: 'destructive', onPress: logout }])} />
+            onPress={async () => { if (await confirm('Log out?', 'You will need to sign in again.', 'Log out', { destructive: true })) logout(); }} />
         </View>
       </ScrollView>
 
@@ -187,67 +269,24 @@ export default function CaregiverProfileScreen({ navigation }) {
   );
 }
 
-function AvailabilityEditor({ slots, setSlots }) {
-  const taken = new Set(slots.map((x) => x.day));
-  const free = DAYS.map((d, i) => i).filter((i) => !taken.has(i));
-  const [draft, setDraft] = useState({ day: free[0] ?? 0, start_time: '08:00', end_time: '17:00' });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+const VERIFY_COPY = {
+  not_submitted: { icon: 'upload-cloud', title: 'Get verified to start getting jobs', sub: 'Upload your ID, Certificate of Good Conduct and any certificates. Takes about 5 minutes.', cta: 'Upload documents', tone: C.primary },
+  pending:       { icon: 'clock',        title: 'Background check in progress',      sub: "Thank you for applying. We'll get back to you within 2–3 days.", cta: 'View application', tone: C.warning },
+  rejected:      { icon: 'alert-circle', title: 'Your application needs changes',     sub: 'See what to fix and upload your documents again.', cta: 'Fix and resubmit', tone: C.danger },
+};
 
-  useEffect(() => {
-    if (taken.has(draft.day) && free.length) setDraft((x) => ({ ...x, day: free[0] }));
-  }, [slots]); 
-
-  const add = async () => {
-    setError('');
-    if (draft.end_time <= draft.start_time) return setError('End time must be after start time.');
-    setBusy(true);
-    try {
-      const { data } = await caregiverApi.addAvailability(draft);
-      setSlots((list) => [...list, data].sort((a, b) => a.day - b.day));
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const remove = async (id) => {
-    setError('');
-    try {
-      await caregiverApi.delAvailability(id);
-      setSlots((list) => list.filter((x) => x.id !== id));
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  };
-
+function VerificationCard({ status, onPress }) {
+  const v = VERIFY_COPY[status] || VERIFY_COPY.not_submitted;
   return (
-    <Card>
-      <Text style={s.h}>Weekly availability</Text>
-      <Text style={[TYPE.caption, { marginBottom: 8 }]}>Availability is 25% of the match score. Changes save immediately.</Text>
-      {slots.length === 0 ? <Text style={[TYPE.body, { paddingVertical: 6 }]}>No days added yet.</Text> : slots.map((x, i) => (
-        <View key={x.id} style={[s.slot, i > 0 && s.divider]}>
-          <Text style={[TYPE.label, { width: 100 }]}>{DAYS_LONG[x.day]}</Text>
-          <Text style={[TYPE.body, { flex: 1 }]}>{fmtShortTime(x.start_time)} – {fmtShortTime(x.end_time)}</Text>
-          <TouchableOpacity onPress={() => remove(x.id)} hitSlop={8} accessibilityLabel={`Remove ${DAYS_LONG[x.day]}`}>
-            <Feather name="trash-2" size={16} color={C.textFaint} />
-          </TouchableOpacity>
+    <Card style={{ borderColor: v.tone, borderWidth: 1 }}>
+      <View style={{ flexDirection: 'row', gap: 12 }}>
+        <Feather name={v.icon} size={20} color={v.tone} style={{ marginTop: 2 }} />
+        <View style={{ flex: 1 }}>
+          <Text style={TYPE.h4}>{v.title}</Text>
+          <Text style={[TYPE.caption, { marginTop: 2 }]}>{v.sub}</Text>
         </View>
-      ))}
-      {free.length > 0 ? (
-        <View style={s.addBox}>
-          <View style={s.wrap}>
-            {free.map((i) => <Chip key={i} label={DAYS[i]} active={draft.day === i} onPress={() => setDraft((d) => ({ ...d, day: i }))} />)}
-          </View>
-          <Text style={s.mini}>From</Text>
-          <TimeChips value={draft.start_time} onChange={(t) => setDraft((d) => ({ ...d, start_time: t }))} from={5} to={22} />
-          <Text style={s.mini}>To</Text>
-          <TimeChips value={draft.end_time} onChange={(t) => setDraft((d) => ({ ...d, end_time: t }))} from={6} to={23} disabledBefore={draft.start_time} />
-          <Button title={`Add ${DAYS_LONG[draft.day]}`} variant="secondary" size="sm" iconName="plus" loading={busy} onPress={add} style={{ marginTop: 12 }} />
-        </View>
-      ) : null}
-      {error ? <Notice style={{ marginTop: 10 }}>{error}</Notice> : null}
+      </View>
+      <Button title={v.cta} size="sm" variant={status === 'pending' ? 'secondary' : 'primary'} onPress={onPress} style={{ marginTop: 12, alignSelf: 'flex-start' }} />
     </Card>
   );
 }
@@ -258,10 +297,7 @@ const s = StyleSheet.create({
   switchRow: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   h:         { fontSize: 15, fontWeight: '800', color: C.text, marginBottom: 12 },
   wrap:      { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  slot:      { flexDirection: 'row', alignItems: 'center', paddingVertical: 10 },
-  divider:   { borderTopWidth: 1, borderTopColor: C.borderLight },
-  addBox:    { marginTop: 10, backgroundColor: C.cardSoft, borderRadius: RADIUS.md, padding: 12 },
-  mini:      { fontSize: 12, fontWeight: '700', color: C.textMuted, marginTop: 12, marginBottom: 6 },
+  sub:       { fontSize: 13, fontWeight: '800', color: C.text, marginBottom: 10 },
   linkRow:   { flexDirection: 'row', alignItems: 'center', gap: 12, backgroundColor: C.card, borderRadius: RADIUS.lg, padding: 16, borderWidth: 1, borderColor: C.borderLight },
   bar:       { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 20, paddingVertical: 12, backgroundColor: C.card, borderTopWidth: 1, borderTopColor: C.borderLight, ...SHADOWS.lg },
 });

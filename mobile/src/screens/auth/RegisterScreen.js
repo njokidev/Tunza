@@ -1,11 +1,14 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity,
-  KeyboardAvoidingView, Platform, Alert } from 'react-native';
+  KeyboardAvoidingView, Platform, Alert, Linking } from 'react-native';
+import { Feather } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { authApi } from '../../api';
 import { useAuth } from '../../context/AuthContext';
 import { Button, Input, PasswordInput, PasswordChecklist, PasswordMatch, COLORS } from '../../components/ui';
 import { passwordChecks } from '../../lib/password';
+import { normalizePhone } from '../../lib/format';
+import { PRIVACY_URL, TERMS_URL } from '../../lib/constants';
 import { COLORS as C, GRADIENT, RADIUS, SHADOWS } from '../../theme';
 
 const ROLES = [
@@ -14,7 +17,7 @@ const ROLES = [
 ];
 
 export default function RegisterScreen({ navigation }) {
-  const [form,    setForm]    = useState({ full_name:'', email:'', phone:'', password:'', password2:'', role:'patient' });
+  const [form,    setForm]    = useState({ full_name:'', email:'', phone:'', password:'', password2:'', role:'patient', accept_terms:false });
   const [errors,  setErrors]  = useState({});
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
@@ -27,6 +30,8 @@ export default function RegisterScreen({ navigation }) {
     if (!form.full_name) e.full_name = 'Required';
     if (!form.email)     e.email     = 'Required';
     if (!form.phone)     e.phone     = 'Required';
+    else if (!normalizePhone(form.phone)) e.phone = 'Enter a Kenyan mobile number, e.g. 0712 345 678';
+    if (!form.accept_terms) e.accept_terms = 'Please accept the Terms and Privacy Policy to continue';
     if (!passwordOk) e.password = 'Password doesn\'t meet all the requirements below';
     if (form.password !== form.password2) e.password2 = 'Passwords don\'t match. Tap the eye to check what you typed';
     setErrors(e);
@@ -37,7 +42,7 @@ export default function RegisterScreen({ navigation }) {
     if (!validate()) return;
     setLoading(true);
     try {
-      await authApi.register(form);
+      await authApi.register({ ...form, phone: normalizePhone(form.phone) });
       // Sign straight in: patients land on Home (Book a caregiver), caregivers on
       // their dashboard, which walks them through completing their profile.
       try {
@@ -48,7 +53,9 @@ export default function RegisterScreen({ navigation }) {
       }
     } catch (err) {
       const d = err.response?.data || {};
-      if (d.password) setErrors(p => ({ ...p, password: [].concat(d.password).join(' ') }));
+      const fieldErr = {};
+      ['password', 'phone', 'email', 'accept_terms', 'full_name'].forEach(k => { if (d[k]) fieldErr[k] = [].concat(d[k]).join(' '); });
+      setErrors(p => ({ ...p, ...fieldErr }));
       Alert.alert('Registration Failed', Object.values(d).flat().join('\n') || 'Please try again.');
     } finally { setLoading(false); }
   };
@@ -90,7 +97,8 @@ export default function RegisterScreen({ navigation }) {
           <View style={s.formCard}>
             <Input label="Full Name"         placeholder="Jane Njoki"       icon="👤" value={form.full_name} onChangeText={v=>set('full_name',v)} error={errors.full_name} />
             <Input label="Email"             placeholder="jane@example.com" icon="✉" value={form.email}     onChangeText={v=>set('email',v)}     error={errors.email} keyboardType="email-address" autoCapitalize="none" />
-            <Input label="Phone Number"      placeholder="0712 345 678"     icon="📱" value={form.phone}     onChangeText={v=>set('phone',v)}     error={errors.phone} keyboardType="phone-pad" />
+            <Input label="Phone Number (M-Pesa)" placeholder="0712 345 678"  icon="📱" value={form.phone}     onChangeText={v=>set('phone',v)}     error={errors.phone} keyboardType="phone-pad"
+              hint="We'll text you a code to verify it." />
             <PasswordInput label="Password" placeholder="Minimum 8 characters" icon="🔒" value={form.password}
               onChangeText={v=>set('password',v)} error={errors.password} textContentType="newPassword">
               <PasswordChecklist checks={checks} touched={form.password.length > 0} />
@@ -99,7 +107,20 @@ export default function RegisterScreen({ navigation }) {
               onChangeText={v=>set('password2',v)} error={errors.password2} textContentType="newPassword">
               <PasswordMatch password={form.password} confirm={form.password2} />
             </PasswordInput>
-            <Button title="Create Account" onPress={handleRegister} loading={loading} style={{marginTop:4}} />
+            <TouchableOpacity activeOpacity={0.85} onPress={() => set('accept_terms', !form.accept_terms)} style={s.consent}
+              accessibilityRole="checkbox" accessibilityState={{ checked: form.accept_terms }}>
+              <View style={[s.box, form.accept_terms && s.boxOn, errors.accept_terms && !form.accept_terms && { borderColor: C.danger }]}>
+                {form.accept_terms ? <Feather name="check" size={14} color="#fff" /> : null}
+              </View>
+              <Text style={s.consentTxt}>
+                I agree to Tunza's{' '}
+                <Text style={s.link} onPress={() => Linking.openURL(TERMS_URL)}>Terms of Service</Text>
+                {' '}and{' '}
+                <Text style={s.link} onPress={() => Linking.openURL(PRIVACY_URL)}>Privacy Policy</Text>, including how my data is used.
+              </Text>
+            </TouchableOpacity>
+            {errors.accept_terms && !form.accept_terms ? <Text style={s.err}>{errors.accept_terms}</Text> : null}
+            <Button title="Create Account" onPress={handleRegister} loading={loading} style={{marginTop:12}} />
           </View>
 
           <View style={s.footer}>
@@ -129,4 +150,10 @@ const s = StyleSheet.create({
   roleCheck:   { position:'absolute', top:8, right:8, width:18, height:18, borderRadius:9, alignItems:'center', justifyContent:'center' },
   formCard:    { backgroundColor:C.card, borderRadius:RADIUS.lg, padding:20, ...SHADOWS.card, marginBottom:16 },
   footer:      { flexDirection:'row', justifyContent:'center', paddingBottom:24 },
+  consent:     { flexDirection:'row', gap:10, alignItems:'flex-start', marginTop:4 },
+  box:         { width:22, height:22, borderRadius:6, borderWidth:1.5, borderColor:C.border, alignItems:'center', justifyContent:'center', marginTop:1 },
+  boxOn:       { backgroundColor:C.primary, borderColor:C.primary },
+  consentTxt:  { flex:1, fontSize:13, color:C.textBody, lineHeight:19 },
+  link:        { color:C.primary, fontWeight:'700', textDecorationLine:'underline' },
+  err:         { color:C.danger, fontSize:12, marginTop:6 },
 });

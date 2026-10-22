@@ -4,6 +4,7 @@ import { messageApi } from '../api';
 import { Avatar, Empty, LoadingScreen, ScreenHeader } from '../components/ui';
 import { COLORS as C, TYPE } from '../theme';
 import { useAuth } from '../context/AuthContext';
+import usePolling from '../lib/usePolling';
 import { formatDistanceToNow } from 'date-fns';
 
 export default function ConversationsScreen({ navigation }) {
@@ -20,11 +21,8 @@ export default function ConversationsScreen({ navigation }) {
     finally { setLoading(false); setRefreshing(false); }
   }, []);
 
-  useEffect(() => {
-    fetch();
-    const interval = setInterval(fetch, 5000);
-    return () => clearInterval(interval);
-  }, []);
+  // Refresh the inbox every 30s, only while this tab is visible.
+  usePolling(fetch, 30000, [fetch]);
 
   if (loading) return <LoadingScreen />;
 
