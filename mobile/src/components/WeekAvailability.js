@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Switch, TouchableOpacity, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import { Card } from './ui';
 import { COLORS as C, RADIUS, TYPE } from '../theme';
@@ -43,61 +43,54 @@ export const slotsFromWeek = (week) => week
   .filter(Boolean);
 
 /**
- * Weekly availability: switch days on and tap your usual shift.
- * Each day can have its own shift (tap the hours under the day).
- * Controlled: `week` comes from weekFromSlots(); the profile's Save button
- * sends slotsFromWeek(week) in one request (PUT /caregivers/availability/).
+ * Weekly availability in two steps:
+ *   1. Which days?  Tap Mon–Sun (or Weekdays / Every day).
+ *   2. What hours?  One shift for all those days: a preset, or custom from–to.
+ * "Different hours on some days" opens a row per chosen day for exceptions.
+ * Controlled: `week` comes from weekFromSlots(); the parent's Save sends
+ * slotsFromWeek(week) in one request (PUT /caregivers/availability/).
  */
-export default function WeekAvailability({ week, onChange }) {
-  const [usual, setUsual] = useState('day');
-  const [openDay, setOpenDay] = useState(null);
-  const setWeek = (fn) => onChange(fn(week));
-
-  useEffect(() => {
-    const first = week.find((d) => d.on);
-    const p = first && presetFor(first.start, first.end);
-    if (p) setUsual(p.key);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const usualPreset = SHIFT_PRESETS.find((p) => p.key === usual) || SHIFT_PRESETS[0];
-
-  const update = (i, patch) => setWeek((w) => w.map((d, j) => (j === i ? { ...d, ...patch } : d)));
-  const pickUsual = (p) => {
-    setUsual(p.key);
-    setWeek((w) => w.map((d) => (d.on ? { ...d, start: p.start, end: p.end } : d)));
-  };
-  const pickDays = (days) => {
-    setWeek((w) => w.map((d, i) => (days.includes(i)
-      ? { on: true, start: d.on ? d.start : usualPreset.start, end: d.on ? d.end : usualPreset.end }
-      : { ...d, on: false })));
-  };
-  const toggleDay = (i, on) => update(i, on ? { on, start: usualPreset.start, end: usualPreset.end } : { on });
-
+export default function WeekAvailability({ week, onChange, bare = false }) {
   const onDays = week.map((d, i) => (d.on ? i : -1)).filter((i) => i >= 0);
+  const first = week.find((d) => d.on);
+  const mixed = onDays.some((i) => week[i].start !== first.start || week[i].end !== first.end);
+  const [perDay, setPerDay] = useState(mixed);
+  const [hours, setHours] = useState(() => (first ? { start: first.start, end: first.end } : { start: '08:00', end: '17:00' }));
+  const [custom, setCustom] = useState(() => !!first && !presetFor(first.start, first.end));
+  useEffect(() => { if (mixed) setPerDay(true); }, [mixed]);
+
+  const setWeek = (fn) => onChange(fn(week));
+  const applyHours = (h) => {
+    setHours(h);
+    setWeek((w) => w.map((d) => (d.on ? { ...d, ...h } : d)));
+  };
+  const toggleDay = (i) => setWeek((w) => w.map((d, j) => (j === i ? (d.on ? { ...d, on: false } : { on: true, ...hours }) : d)));
+  const pickDays = (days) => setWeek((w) => w.map((d, i) => (days.includes(i) ? (d.on ? d : { on: true, ...hours }) : { ...d, on: false })));
+  const updateDay = (i, patch) => setWeek((w) => w.map((d, j) => (j === i ? { ...d, ...patch } : d)));
+
   const summary = summarise(week);
+  const Wrapper = bare ? View : Card;
 
   return (
-    <Card>
-      <Text style={st.h}>Weekly availability</Text>
-      <Text style={[TYPE.caption, { marginBottom: 14 }]}>Turn on the days you work and pick your usual hours. Families are matched to the days you choose.</Text>
+    <Wrapper>
+      {!bare ? <Text style={st.h}>Weekly availability</Text> : null}
+      {!bare ? <Text style={[TYPE.caption, { marginBottom: 6 }]}>Families are matched to the days and hours you choose.</Text> : null}
 
-      {/* 1. Usual hours */}
-      <Text style={st.step}>Your usual hours</Text>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingRight: 8 }}>
-        {SHIFT_PRESETS.map((p) => {
-          const on = usual === p.key;
+      {/* 1. Days */}
+      <Text style={st.step}>1. Which days can you work?</Text>
+      <View style={st.dayChips}>
+        {DAYS.map((d, i) => {
+          const on = week[i].on;
           return (
-            <TouchableOpacity key={p.key} onPress={() => pickUsual(p)} activeOpacity={0.85} style={[st.shift, on && st.shiftOn]}>
-              <Text style={[st.shiftLbl, on && { color: '#fff' }]}>{p.label}</Text>
-              <Text style={[st.shiftSub, on && { color: 'rgba(255,255,255,0.85)' }]}>{p.sub}</Text>
+            <TouchableOpacity key={d} onPress={() => toggleDay(i)} activeOpacity={0.85}
+              style={[st.dayChip, on && st.dayChipOn]} accessibilityRole="checkbox"
+              accessibilityState={{ checked: on }} accessibilityLabel={DAYS_LONG[i]}>
+              <Text style={[st.dayChipTxt, on && { color: '#fff' }]}>{d}</Text>
             </TouchableOpacity>
           );
         })}
-      </ScrollView>
-
-      {/* 2. Days */}
-      <View style={st.stepRow}>
-        <Text style={[st.step, { marginTop: 0, marginBottom: 0, flex: 1 }]}>Days</Text>
+      </View>
+      <View style={[st.wrap, { marginTop: 10 }]}>
         {DAY_GROUPS.map((g) => {
           const on = g.days.length === onDays.length && g.days.every((d) => onDays.includes(d));
           return (
@@ -108,69 +101,117 @@ export default function WeekAvailability({ week, onChange }) {
         })}
       </View>
 
-      <View style={st.days}>
-        {week.map((d, i) => (
-          <View key={DAYS[i]} style={[st.dayRow, i > 0 && st.divider]}>
-            <View style={st.dayTop}>
-              <View style={{ flex: 1 }}>
-                <Text style={[TYPE.label, !d.on && { color: C.textMuted }]}>{DAYS_LONG[i]}</Text>
-                {d.on ? (
-                  <TouchableOpacity onPress={() => setOpenDay(openDay === i ? null : i)} hitSlop={6} style={st.hoursBtn}>
-                    <Text style={st.hoursTxt}>{hoursLabel(d)}</Text>
-                    <Feather name={openDay === i ? 'chevron-up' : 'edit-2'} size={12} color={C.primary} />
-                  </TouchableOpacity>
-                ) : <Text style={TYPE.caption}>Not available</Text>}
-              </View>
-              <Switch value={d.on} onValueChange={(v) => toggleDay(i, v)}
-                trackColor={{ true: C.primary, false: C.border }} thumbColor="#fff"
-                accessibilityLabel={`Available on ${DAYS_LONG[i]}`} />
-            </View>
-            {d.on && openDay === i ? (
-              <View style={[st.wrap, { marginTop: 10 }]}>
-                {SHIFT_PRESETS.map((p) => {
-                  const on = p.start === d.start && p.end === d.end;
-                  return (
-                    <TouchableOpacity key={p.key} onPress={() => { update(i, { start: p.start, end: p.end }); setOpenDay(null); }}
-                      style={[st.mini, on && st.quickOn]} activeOpacity={0.85}>
-                      <Text style={[st.quickTxt, on && { color: C.primary }]}>{p.label} <Text style={{ fontWeight: '500' }}>{p.sub}</Text></Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
-            ) : null}
+      {/* 2. Hours */}
+      <Text style={[st.step, { marginTop: 22 }]}>2. What hours?</Text>
+      {!onDays.length ? (
+        <Text style={TYPE.caption}>Choose your days first.</Text>
+      ) : (
+        <>
+          <View style={st.shiftGrid}>
+            {SHIFT_PRESETS.map((p) => {
+              const on = !custom && hours.start === p.start && hours.end === p.end;
+              return (
+                <TouchableOpacity key={p.key} onPress={() => { setCustom(false); applyHours({ start: p.start, end: p.end }); }}
+                  activeOpacity={0.85} style={[st.shift, on && st.shiftOn]}>
+                  <Text style={[st.shiftLbl, on && { color: '#fff' }]}>{p.label}</Text>
+                  <Text style={[st.shiftSub, on && { color: 'rgba(255,255,255,0.85)' }]}>{p.sub}</Text>
+                </TouchableOpacity>
+              );
+            })}
+            <TouchableOpacity onPress={() => setCustom(true)} activeOpacity={0.85} style={[st.shift, custom && st.shiftOn]}>
+              <Text style={[st.shiftLbl, custom && { color: '#fff' }]}>Custom</Text>
+              <Text style={[st.shiftSub, custom && { color: 'rgba(255,255,255,0.85)' }]}>Set your own</Text>
+            </TouchableOpacity>
           </View>
-        ))}
-      </View>
+          {custom ? (
+            <View style={st.customRow}>
+              <TimeStepper label="From" value={hours.start} onChange={(start) => applyHours({ ...hours, start })} />
+              <Feather name="arrow-right" size={16} color={C.textMuted} style={{ marginTop: 22 }} />
+              <TimeStepper label="To" value={hours.end} onChange={(end) => applyHours({ ...hours, end })} />
+            </View>
+          ) : null}
+
+          <TouchableOpacity onPress={() => setPerDay((v) => !v)} style={st.perDayToggle} activeOpacity={0.8}>
+            <Feather name={perDay ? 'check-square' : 'square'} size={16} color={C.primary} />
+            <Text style={st.perDayTxt}>Different hours on some days</Text>
+          </TouchableOpacity>
+          {perDay ? (
+            <View style={st.days}>
+              {onDays.map((i, k) => (
+                <View key={i} style={[st.dayRow, k > 0 && st.divider]}>
+                  <Text style={[TYPE.label, { marginBottom: 8 }]}>{DAYS_LONG[i]} · <Text style={{ color: C.primary }}>{hoursLabel(week[i])}</Text></Text>
+                  <View style={st.wrap}>
+                    {SHIFT_PRESETS.map((p) => {
+                      const on = p.start === week[i].start && p.end === week[i].end;
+                      return (
+                        <TouchableOpacity key={p.key} onPress={() => updateDay(i, { start: p.start, end: p.end })}
+                          style={[st.mini, on && st.quickOn]} activeOpacity={0.85}>
+                          <Text style={[st.quickTxt, on && { color: C.primary }]}>{p.label}</Text>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : null}
+        </>
+      )}
 
       <View style={st.summary}>
         <Feather name="calendar" size={14} color={C.textMuted} style={{ marginTop: 2 }} />
         <Text style={[TYPE.caption, { flex: 1 }]}>
-          {summary.length ? summary.join('\n') : 'No days selected — families can still book you, but you rank lower in Smart Match.'}
+          {summary.length ? summary.join('\n') : 'No days chosen yet.'}
         </Text>
       </View>
+    </Wrapper>
+  );
+}
 
-    </Card>
+/** Half-hour steps; shows 12-hour time. */
+function TimeStepper({ label, value, onChange }) {
+  const step = (dir) => {
+    const [h, m] = value.split(':').map(Number);
+    const mins = (((h * 60 + m + dir * 30) % 1440) + 1440) % 1440;
+    onChange(`${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`);
+  };
+  return (
+    <View style={{ flex: 1 }}>
+      <Text style={st.stepperLbl}>{label}</Text>
+      <View style={st.stepper}>
+        <TouchableOpacity onPress={() => step(-1)} hitSlop={8} accessibilityLabel={`${label} earlier`}><Feather name="minus" size={18} color={C.primary} /></TouchableOpacity>
+        <Text style={st.stepperVal}>{ampm(value)}</Text>
+        <TouchableOpacity onPress={() => step(1)} hitSlop={8} accessibilityLabel={`${label} later`}><Feather name="plus" size={18} color={C.primary} /></TouchableOpacity>
+      </View>
+    </View>
   );
 }
 
 const st = StyleSheet.create({
   h:        { fontSize: 15, fontWeight: '800', color: C.text, marginBottom: 6 },
-  step:     { fontSize: 12, fontWeight: '800', color: C.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 },
-  stepRow:  { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 18, marginBottom: 6 },
-  shift:    { minWidth: 92, paddingVertical: 10, paddingHorizontal: 12, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border, backgroundColor: '#fff' },
+  step:     { fontSize: 13, fontWeight: '800', color: C.text, marginTop: 12, marginBottom: 10 },
+  dayChips: { flexDirection: 'row', justifyContent: 'space-between', gap: 4 },
+  dayChip:  { flex: 1, aspectRatio: 1, maxWidth: 48, borderRadius: 999, borderWidth: 1.5, borderColor: C.border, backgroundColor: '#fff', alignItems: 'center', justifyContent: 'center' },
+  dayChipOn:{ backgroundColor: C.primary, borderColor: C.primary },
+  dayChipTxt:{ fontSize: 12, fontWeight: '800', color: C.textBody },
+  shiftGrid:{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  shift:    { width: '31.5%', paddingVertical: 10, paddingHorizontal: 10, borderRadius: RADIUS.md, borderWidth: 1, borderColor: C.border, backgroundColor: '#fff' },
   shiftOn:  { backgroundColor: C.primary, borderColor: C.primary },
-  shiftLbl: { fontSize: 14, fontWeight: '800', color: C.text },
+  shiftLbl: { fontSize: 13, fontWeight: '800', color: C.text },
   shiftSub: { fontSize: 11, fontWeight: '600', color: C.textMuted, marginTop: 2 },
-  quick:    { paddingHorizontal: 10, paddingVertical: 6, borderRadius: RADIUS.pill, borderWidth: 1, borderColor: C.border, backgroundColor: '#fff' },
+  customRow:{ flexDirection: 'row', alignItems: 'flex-start', gap: 10, marginTop: 12 },
+  stepperLbl:{ fontSize: 12, fontWeight: '700', color: C.textMuted, marginBottom: 6 },
+  stepper:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', borderWidth: 1, borderColor: C.border, borderRadius: RADIUS.md, paddingHorizontal: 12, paddingVertical: 10, backgroundColor: '#fff' },
+  stepperVal:{ fontSize: 15, fontWeight: '800', color: C.text },
+  perDayToggle:{ flexDirection: 'row', alignItems: 'center', gap: 8, marginTop: 16, alignSelf: 'flex-start' },
+  perDayTxt:{ fontSize: 13, fontWeight: '700', color: C.primary },
+  quick:    { paddingHorizontal: 12, paddingVertical: 7, borderRadius: RADIUS.pill, borderWidth: 1, borderColor: C.border, backgroundColor: '#fff' },
   quickOn:  { borderColor: C.primary, backgroundColor: C.primaryXLight },
   quickTxt: { fontSize: 12, fontWeight: '700', color: C.textBody },
-  days:     { borderWidth: 1, borderColor: C.borderLight, borderRadius: RADIUS.md, paddingHorizontal: 12 },
-  dayRow:   { paddingVertical: 10 },
-  dayTop:   { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  days:     { borderWidth: 1, borderColor: C.borderLight, borderRadius: RADIUS.md, paddingHorizontal: 12, marginTop: 10 },
+  dayRow:   { paddingVertical: 12 },
   divider:  { borderTopWidth: 1, borderTopColor: C.borderLight },
-  hoursBtn: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 2, alignSelf: 'flex-start' },
-  hoursTxt: { fontSize: 12, fontWeight: '700', color: C.primary },
   wrap:     { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
   mini:     { paddingHorizontal: 10, paddingVertical: 7, borderRadius: RADIUS.pill, borderWidth: 1, borderColor: C.border, backgroundColor: '#fff' },
-  summary:  { flexDirection: 'row', gap: 8, marginTop: 12, backgroundColor: C.cardSoft, borderRadius: RADIUS.md, padding: 10 },
+  summary:  { flexDirection: 'row', gap: 8, marginTop: 16, backgroundColor: C.cardSoft, borderRadius: RADIUS.md, padding: 10 },
 });

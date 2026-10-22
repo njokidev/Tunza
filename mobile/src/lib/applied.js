@@ -1,6 +1,6 @@
 import { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from './secureStore';
 
 // The API has no "my applications" endpoint yet, so remember which open requests
 // this caregiver applied to on the device (web does the same with localStorage).

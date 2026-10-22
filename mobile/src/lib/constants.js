@@ -163,6 +163,10 @@ export const AREAS = [
   { name: 'Donholm', lat: -1.2960, lng: 36.8890, county: 'Nairobi' },
   { name: 'Embakasi', lat: -1.3230, lng: 36.8940, county: 'Nairobi' },
   { name: 'Kasarani', lat: -1.2210, lng: 36.8970, county: 'Nairobi' },
+  { name: 'Roysambu', lat: -1.2180, lng: 36.8870, county: 'Nairobi' },
+  { name: 'Buruburu', lat: -1.2860, lng: 36.8800, county: 'Nairobi' },
+  { name: 'Umoja', lat: -1.2840, lng: 36.8990, county: 'Nairobi' },
+  { name: 'Ruaka', lat: -1.2050, lng: 36.7780, county: 'Kiambu' },
   { name: 'Syokimau', lat: -1.3620, lng: 36.9270, county: 'Machakos' },
   { name: 'Kitengela', lat: -1.4760, lng: 36.9600, county: 'Kajiado' },
   { name: 'Rongai', lat: -1.3960, lng: 36.7440, county: 'Kajiado' },
@@ -172,9 +176,23 @@ export const AREAS = [
   { name: 'Ruiru', lat: -1.1460, lng: 36.9600, county: 'Kiambu' },
   { name: 'Juja', lat: -1.1020, lng: 37.0140, county: 'Kiambu' },
   { name: 'Thika', lat: -1.0333, lng: 37.0693, county: 'Kiambu' },
+  // Nakuru and Kericho (pilot). Coordinates are town centres, used only for rough distance.
+  { name: 'Nakuru Town', lat: -0.2833, lng: 36.0667, county: 'Nakuru' },
+  { name: 'Milimani (Nakuru)', lat: -0.2900, lng: 36.0600, county: 'Nakuru' },
+  { name: 'Section 58', lat: -0.2780, lng: 36.0900, county: 'Nakuru' },
+  { name: 'Lanet', lat: -0.2980, lng: 36.1450, county: 'Nakuru' },
+  { name: 'Njoro', lat: -0.3300, lng: 35.9400, county: 'Nakuru' },
+  { name: 'Gilgil', lat: -0.4950, lng: 36.3200, county: 'Nakuru' },
+  { name: 'Naivasha', lat: -0.7167, lng: 36.4333, county: 'Nakuru' },
+  { name: 'Molo', lat: -0.2500, lng: 35.7333, county: 'Nakuru' },
+  { name: 'Kericho Town', lat: -0.3677, lng: 35.2831, county: 'Kericho' },
+  { name: 'Kapsoit', lat: -0.3500, lng: 35.2300, county: 'Kericho' },
+  { name: 'Litein', lat: -0.5833, lng: 35.1833, county: 'Kericho' },
+  { name: 'Kipkelion', lat: -0.2000, lng: 35.4667, county: 'Kericho' },
+  { name: 'Londiani', lat: -0.1667, lng: 35.6000, county: 'Kericho' },
 ];
 
-export const AREA_COUNTIES = ['Nairobi', 'Kiambu', 'Kajiado', 'Machakos'];
+export const AREA_COUNTIES = ['Nairobi', 'Kiambu', 'Kajiado', 'Machakos', 'Nakuru', 'Kericho'];
 
 export const BOOKING_STATUS = {
   pending:   { label: 'Pending',     bg: '#FFFBEB', fg: '#B45309' },

@@ -11,6 +11,8 @@ import { Button, Card, Input, LoadingScreen, Notice, ScreenHeader, StatusPill } 
 import { COLORS as C, RADIUS, SHADOWS, TYPE } from '../../theme';
 import { MAX_OTHER_DOCS, VERIFICATION_DOCS, VERIFICATION_STATUS } from '../../lib/constants';
 import { errorMessage, fmtDate } from '../../lib/format';
+import { useAuth } from '../../context/AuthContext';
+import SetupFooter from './setup/SetupFooter';
 
 const ID_RE = /^\d{7,8}$/;
 const MAX_MB = 10;
@@ -58,7 +60,11 @@ function appendFile(form, field, f) {
  * Caregiver verification: upload ID, good conduct and certificates, then wait
  * for Tunza's background check (2–3 days).
  */
-export default function VerificationScreen({ navigation }) {
+export default function VerificationScreen({ navigation, route }) {
+  // During first-time setup: no Back, and after submitting the app moves to the waiting screen.
+  const onboarding = !!route?.params?.onboarding;
+  const { refreshUser } = useAuth();
+  const goBack = onboarding ? undefined : () => navigation.goBack();
   const [info, setInfo] = useState(null);
   const [loadError, setLoadError] = useState('');
   const [idNumber, setIdNumber] = useState('');
@@ -84,7 +90,7 @@ export default function VerificationScreen({ navigation }) {
   if (!info) {
     return loadError ? (
       <View style={{ flex: 1, backgroundColor: C.bg }}>
-        <ScreenHeader title="Verification" onBack={() => navigation.goBack()} />
+        <ScreenHeader title="Verification" onBack={goBack} />
         <View style={{ paddingHorizontal: 20 }}>
           <Notice>{loadError}</Notice>
           <Button title="Try again" style={{ marginTop: 12 }} onPress={load} />
@@ -94,7 +100,8 @@ export default function VerificationScreen({ navigation }) {
   }
 
   if (justSubmitted || info.verification_status === 'pending') {
-    return <Submitted info={info} justSubmitted={justSubmitted} onDone={() => navigation.goBack()} />;
+    return <Submitted info={info} justSubmitted={justSubmitted} onboarding={onboarding}
+      onDone={onboarding ? () => refreshUser().catch(() => {}) : () => navigation.goBack()} />;
   }
   if (info.verification_status === 'approved') {
     return <Approved info={info} onBack={() => navigation.goBack()} />;
@@ -139,6 +146,11 @@ export default function VerificationScreen({ navigation }) {
       const { data } = await caregiverApi.submitVerification(form, (ev) => {
         if (ev.total) setProgress(Math.round((ev.loaded / ev.total) * 100));
       });
+      if (onboarding) {
+        // /auth/me/ now says "verification": the navigator opens the waiting screen.
+        await refreshUser().catch(() => { setInfo(data); setJustSubmitted(true); });
+        return;
+      }
       setInfo(data);
       setJustSubmitted(true);
     } catch (err) {
@@ -155,8 +167,11 @@ export default function VerificationScreen({ navigation }) {
   return (
     <KeyboardAvoidingView style={{ flex: 1, backgroundColor: C.bg }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView contentContainerStyle={{ paddingBottom: 120 }} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-        <ScreenHeader title="Get verified" onBack={() => navigation.goBack()}
-          subtitle="Families only see background-checked caregivers. Upload your documents once — we review them within 2–3 days." />
+        <ScreenHeader title={onboarding ? 'Upload your documents' : 'Get verified'} onBack={goBack}
+          eyebrow={onboarding ? 'GET VERIFIED' : undefined}
+          subtitle={onboarding
+            ? 'Upload a clear photo or scan of your national ID, your Certificate of Good Conduct, and any other relevant certificates. Families only see background-checked caregivers.'
+            : 'Families only see background-checked caregivers. Upload your documents once — we review them within 2–3 days.'} />
 
         <View style={{ paddingHorizontal: 20, gap: 12 }}>
           {info.verification_status === 'rejected' ? (
@@ -211,6 +226,7 @@ export default function VerificationScreen({ navigation }) {
             </Text>
           </TouchableOpacity>
           {errors.consent ? <Text style={[st.err, { marginTop: -4 }]}>{errors.consent}</Text> : null}
+          {onboarding ? <SetupFooter /> : null}
         </View>
       </ScrollView>
 
@@ -251,7 +267,7 @@ function DocRow({ doc, file, error, first, onPick, onRemove }) {
 }
 
 /** "Thank you for your application" — shown right after submitting and while under review. */
-function Submitted({ info, justSubmitted, onDone }) {
+function Submitted({ info, justSubmitted, onDone, onboarding }) {
   const insets = useSafeAreaInsets();
   const steps = [
     { icon: 'check', done: true, title: 'Documents received', sub: info.verification_submitted_at ? `Submitted ${fmtDate(info.verification_submitted_at)}` : '' },
@@ -281,9 +297,12 @@ function Submitted({ info, justSubmitted, onDone }) {
       </Card>
 
       <Notice kind="info" style={{ marginTop: 14 }}>
-        While you wait, finish your profile — add your work areas, specialties and weekly availability so you're ready for families the day you're approved.
+        {onboarding
+          ? "Once you're approved, you'll set up your profile: bio, rate, areas and hours."
+          : "While you wait, finish your profile — add your work areas, specialties and weekly availability so you're ready for families the day you're approved."}
       </Notice>
-      <Button title={justSubmitted ? 'Done' : 'Back'} onPress={onDone} style={{ marginTop: 20 }} />
+      <Button title={onboarding ? 'Continue' : justSubmitted ? 'Done' : 'Back'} iconName={onboarding ? 'arrow-right' : undefined}
+        onPress={onDone} style={{ marginTop: 20 }} />
     </ScrollView>
   );
 }

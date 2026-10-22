@@ -9,6 +9,7 @@ import RecipientForm, { emptyRecipient, recipientError, suggestedCare } from '..
 import { COLORS as C, RADIUS, TYPE } from '../theme';
 import { AGE_GROUPS, PRIVACY_URL, TERMS_URL } from '../lib/constants';
 import { errorMessage, fmtDate, fmtPhone, normalizePhone, unwrap } from '../lib/format';
+import confirm from '../lib/confirm';
 
 /** Account details + sign out. Patients reach it from the Profile tab; caregivers from their Profile screen. */
 export default function AccountScreen({ navigation, route }) {
@@ -36,10 +37,9 @@ export default function AccountScreen({ navigation, route }) {
     } finally { setSaving(false); }
   };
 
-  const handleLogout = () => Alert.alert('Log out?', 'You will need to sign in again to use Tunza.', [
-    { text: 'Cancel', style: 'cancel' },
-    { text: 'Log out', style: 'destructive', onPress: logout },
-  ]);
+  const handleLogout = async () => {
+    if (await confirm('Log out?', 'You will need to sign in again to use Tunza.', 'Log out', { destructive: true })) logout();
+  };
 
   const shortcuts = user?.role === 'patient' ? [
     { icon: 'clipboard', label: 'My care requests', onPress: () => navigation.navigate('MyRequests') },

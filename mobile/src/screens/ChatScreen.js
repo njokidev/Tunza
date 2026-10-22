@@ -6,6 +6,7 @@ import { messageApi } from '../api';
 import { Avatar, COLORS } from '../components/ui';
 import { COLORS as C, GRADIENT, RADIUS, SHADOWS, TYPE } from '../theme';
 import { useAuth } from '../context/AuthContext';
+import usePolling from '../lib/usePolling';
 import { format } from 'date-fns';
 
 export default function ChatScreen({ route, navigation }) {
@@ -17,7 +18,6 @@ export default function ChatScreen({ route, navigation }) {
   const [loading,  setLoading]  = useState(true);
   const [sending,  setSending]  = useState(false);
   const listRef                 = useRef(null);
-  const pollRef                 = useRef(null);
 
   useEffect(() => {
     navigation.setOptions({ title: otherName || 'Chat' });
@@ -35,7 +35,6 @@ export default function ChatScreen({ route, navigation }) {
         await fetchMessages(id);
       } finally { setLoading(false); }
     })();
-    return () => clearInterval(pollRef.current);
   }, []);
 
   const fetchMessages = useCallback(async (id) => {
@@ -47,11 +46,8 @@ export default function ChatScreen({ route, navigation }) {
     } catch { /* silent */ }
   }, [convId]);
 
-  useEffect(() => {
-    if (!convId) return;
-    pollRef.current = setInterval(() => fetchMessages(convId), 3000);
-    return () => clearInterval(pollRef.current);
-  }, [convId, fetchMessages]);
+  // Poll only while this chat is open and the app is in the foreground.
+  usePolling(() => (convId ? fetchMessages(convId) : null), 10000, [convId, fetchMessages]);
 
   const send = async () => {
     if (!text.trim() || !convId) return;

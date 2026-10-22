@@ -11,6 +11,7 @@ import WeekAvailability, { slotsFromWeek, weekFromSlots } from '../../components
 import { COLORS as C, RADIUS, SHADOWS, TYPE } from '../../theme';
 import { AREAS, LANGUAGES, VERIFICATION_STATUS, isNurseOnly } from '../../lib/constants';
 import { errorMessage, fmtPhone, normalizePhone, unwrap } from '../../lib/format';
+import confirm from '../../lib/confirm';
 
 const levelFor = (years) => (years >= 5 ? 'senior' : years >= 2 ? 'mid' : 'junior');
 
@@ -257,7 +258,7 @@ export default function CaregiverProfileScreen({ navigation }) {
             <Feather name="chevron-right" size={18} color={C.textFaint} />
           </TouchableOpacity>
           <Button title="Log out" variant="danger-soft" iconName="log-out"
-            onPress={() => Alert.alert('Log out?', 'You will need to sign in again.', [{ text: 'Cancel', style: 'cancel' }, { text: 'Log out', style: 'destructive', onPress: logout }])} />
+            onPress={async () => { if (await confirm('Log out?', 'You will need to sign in again.', 'Log out', { destructive: true })) logout(); }} />
         </View>
       </ScrollView>
 

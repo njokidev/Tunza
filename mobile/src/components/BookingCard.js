@@ -4,6 +4,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { bookingApi } from '../api';
 import { Avatar, Button, Card, StatusPill } from './ui';
+import PinSheet, { FamilyPin } from './PinSheet';
 import { COLORS as C, RADIUS, TYPE } from '../theme';
 import { BOOKING_STATUS } from '../lib/constants';
 import { careTypeLabel, caregiverNet, errorMessage, fmtDay, fmtPhone, fmtTime, isSameDay, kes } from '../lib/format';
@@ -15,8 +16,9 @@ const ACTIONS = {
       { status: 'rejected', label: 'Decline', variant: 'outline', icon: 'x', confirm: 'Decline this booking request?' },
       { status: 'accepted', label: 'Accept', variant: 'primary', icon: 'check' },
     ],
-    accepted: [{ status: 'ongoing', label: 'Check in & start', variant: 'primary', icon: 'map-pin', gps: true }],
-    ongoing: [{ status: 'completed', label: 'Check out & end', variant: 'success', icon: 'check-circle', gps: true, confirm: 'Mark this visit as complete? Payment will be released to you.' }],
+    // Both need the PIN the family reads out on the day (see PinSheet).
+    accepted: [{ status: 'ongoing', label: 'Check in & start', variant: 'primary', icon: 'map-pin', gps: true, pin: 'start' }],
+    ongoing: [{ status: 'completed', label: 'Check out & end', variant: 'success', icon: 'check-circle', gps: true, pin: 'end' }],
   },
   patient: {
     pending: [{ status: 'cancelled', label: 'Cancel', variant: 'danger-soft', icon: 'x', confirm: 'Cancel this booking request?' }],
@@ -51,10 +53,28 @@ const ask = (title, message) => new Promise((resolve) =>
  */
 export default function BookingCard({ booking: b, role, onChange, navigation, compact }) {
   const [busy, setBusy] = useState(null);
+  const [pinFor, setPinFor] = useState(null);   // the action waiting for a PIN
   const other = role === 'caregiver' ? b.patient : b.caregiver?.user;
   const actions = ACTIONS[role]?.[b.status] ?? [];
 
+  /** PIN-gated actions: GPS fix, then send with the PIN. Returns an error for the sheet. */
+  const actWithPin = async (a, pin) => {
+    try {
+      const pos = a.gps ? await currentPosition() : null;
+      const { data } = await bookingApi.setStatus(b.id, a.status, { pin, ...(pos || {}) });
+      setPinFor(null);
+      onChange?.(data);
+      if (a.gps && data[a.status === 'ongoing' ? 'check_in_distance_m' : 'check_out_distance_m'] > 500) {
+        Alert.alert('Location noted', "You seem to be more than 500 m from the care address. That's fine if the family moved — Tunza may check in with you.");
+      }
+      return null;
+    } catch (e) {
+      return errorMessage(e);
+    }
+  };
+
   const act = async (a) => {
+    if (a.pin) { setPinFor(a); return; }
     if (a.confirm && !(await ask(a.label, a.confirm))) return;
     setBusy(a.status);
     try {
@@ -177,6 +197,11 @@ export default function BookingCard({ booking: b, role, onChange, navigation, co
         ) : null}
       </View>
 
+      {role === 'patient' ? <FamilyPin visitPin={b.visit_pin} caregiverName={other?.full_name} /> : null}
+      {role === 'caregiver' && b.visit_pin?.locked ? (
+        <Text style={[st.lineTxt, { color: C.danger, marginTop: 10 }]}>Too many wrong PINs. Contact Tunza support to continue.</Text>
+      ) : null}
+
       {actions.length > 0 ? (
         <View style={st.actions}>
           {actions.map((a) => (
@@ -185,6 +210,8 @@ export default function BookingCard({ booking: b, role, onChange, navigation, co
           ))}
         </View>
       ) : null}
+      <PinSheet visible={!!pinFor} which={pinFor?.pin} familyName={other?.full_name}
+        onSubmit={(pin) => actWithPin(pinFor, pin)} onClose={() => setPinFor(null)} />
     </Card>
   );
 }

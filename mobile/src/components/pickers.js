@@ -132,16 +132,25 @@ export function AreaPicker({ value, onChange }) {
 }
 
 /**
- * Choose every area you'll take jobs in. value: array of area names.
- * Areas are grouped by county with a "select all" per county; search filters the
- * list, and anything not on the list can be added as a custom area.
+ * Where a caregiver will take jobs. value: array of area names.
+ *
+ * One row per county; tap to open it, then tap the areas you can reach, or
+ * "Anywhere in <county>" to take all of them. A caregiver can work in several
+ * counties. Search finds an area in any county; anything not listed can be added.
  */
 export function WorkAreasPicker({ value = [], onChange }) {
   const [query, setQuery] = useState('');
   const selected = new Set(value.map((v) => v.toLowerCase()));
+  const countyOf = (name) => AREAS.find((a) => a.name.toLowerCase() === name.toLowerCase())?.county;
+  // Counties already used start open, so a returning caregiver sees their picks.
+  const [open, setOpen] = useState(() => {
+    const used = new Set(value.map(countyOf).filter(Boolean));
+    return used.size ? used : new Set(['Nairobi']);
+  });
   const q = query.trim().toLowerCase();
-  const matches = q ? AREAS.filter((a) => a.name.toLowerCase().includes(q)) : AREAS;
+  const matches = q ? AREAS.filter((a) => a.name.toLowerCase().includes(q) || a.county.toLowerCase().includes(q)) : AREAS;
   const exact = AREAS.some((a) => a.name.toLowerCase() === q) || selected.has(q);
+  const custom = value.filter((v) => !countyOf(v));
 
   const toggle = (name) => onChange(selected.has(name.toLowerCase())
     ? value.filter((v) => v.toLowerCase() !== name.toLowerCase())
@@ -151,6 +160,7 @@ export function WorkAreasPicker({ value = [], onChange }) {
     const rest = value.filter((v) => !names.some((n) => n.toLowerCase() === v.toLowerCase()));
     onChange(on ? [...rest, ...names] : rest);
   };
+  const flip = (county) => setOpen((o) => { const n = new Set(o); n.has(county) ? n.delete(county) : n.add(county); return n; });
   const addCustom = () => {
     const name = query.trim().replace(/\s+/g, ' ');
     if (name.length < 2) return;
@@ -160,25 +170,9 @@ export function WorkAreasPicker({ value = [], onChange }) {
 
   return (
     <View>
-      {/* Selected */}
-      {value.length ? (
-        <View style={[st.wrap, { marginBottom: 12 }]}>
-          {value.map((name) => (
-            <TouchableOpacity key={name} onPress={() => toggle(name)} activeOpacity={0.85} style={[st.area, st.dayOn, st.selArea]}
-              accessibilityLabel={`Remove ${name}`}>
-              <Text style={[st.areaTxt, { color: '#fff' }]}>{name}</Text>
-              <Feather name="x" size={13} color="#fff" />
-            </TouchableOpacity>
-          ))}
-        </View>
-      ) : (
-        <Text style={[st.or, { marginTop: 0 }]}>No areas yet — tap the places you can travel to.</Text>
-      )}
-
-      {/* Search / add */}
       <View style={st.search}>
         <Feather name="search" size={16} color={COLORS.textFaint} />
-        <TextInput value={query} onChangeText={setQuery} placeholder="Search or add an area (e.g. Ruaka)"
+        <TextInput value={query} onChangeText={setQuery} placeholder="Search an area or county"
           placeholderTextColor={COLORS.textFaint} style={st.searchInput} returnKeyType="done"
           onSubmitEditing={() => (matches.length === 1 ? (toggle(matches[0].name), setQuery('')) : !exact && addCustom())} />
         {query ? <TouchableOpacity onPress={() => setQuery('')} hitSlop={8}><Feather name="x-circle" size={16} color={COLORS.textFaint} /></TouchableOpacity> : null}
@@ -190,35 +184,63 @@ export function WorkAreasPicker({ value = [], onChange }) {
         </TouchableOpacity>
       ) : null}
 
-      {/* By county */}
       {AREA_COUNTIES.map((county) => {
+        const all = AREAS.filter((a) => a.county === county);
         const list = matches.filter((a) => a.county === county);
-        if (!list.length) return null;
-        const all = AREAS.filter((a) => a.county === county).every((a) => selected.has(a.name.toLowerCase()));
+        if (q && !list.length) return null;
+        const count = all.filter((a) => selected.has(a.name.toLowerCase())).length;
+        const everywhere = count === all.length;
+        const isOpen = !!q || open.has(county);
         return (
-          <View key={county} style={{ marginTop: 14 }}>
-            <View style={st.countyRow}>
-              <Text style={st.county}>{county}</Text>
-              {!q ? (
-                <TouchableOpacity onPress={() => setCounty(county, !all)} hitSlop={8}>
-                  <Text style={st.countyAll}>{all ? 'Clear' : 'Select all'}</Text>
-                </TouchableOpacity>
-              ) : null}
-            </View>
-            <View style={st.wrap}>
-              {list.map((a) => {
-                const on = selected.has(a.name.toLowerCase());
-                return (
-                  <TouchableOpacity key={a.name} activeOpacity={0.85} onPress={() => toggle(a.name)} style={[st.area, on && st.areaOn]}>
-                    {on ? <Feather name="check" size={13} color={COLORS.primary} /> : null}
-                    <Text style={[st.areaTxt, on && { color: COLORS.primary }]}>{a.name}</Text>
+          <View key={county} style={[st.countyCard, count > 0 && st.countyCardOn]}>
+            <TouchableOpacity onPress={() => flip(county)} activeOpacity={0.8} style={st.countyHead}
+              accessibilityRole="button" accessibilityState={{ expanded: isOpen }}>
+              <Feather name="map-pin" size={16} color={count ? COLORS.primary : COLORS.textFaint} />
+              <Text style={st.countyName}>{county}</Text>
+              <Text style={[st.countyCount, count > 0 && { color: COLORS.primary }]}>
+                {everywhere ? 'Anywhere' : count ? `${count} area${count === 1 ? '' : 's'}` : ''}
+              </Text>
+              <Feather name={isOpen ? 'chevron-up' : 'chevron-down'} size={18} color={COLORS.textMuted} />
+            </TouchableOpacity>
+            {isOpen ? (
+              <View style={st.countyBody}>
+                {!q ? (
+                  <TouchableOpacity onPress={() => setCounty(county, !everywhere)} activeOpacity={0.85}
+                    style={[st.area, st.anywhere, everywhere && st.areaOn]}>
+                    <Feather name={everywhere ? 'check-square' : 'square'} size={15} color={everywhere ? COLORS.primary : COLORS.textMuted} />
+                    <Text style={[st.areaTxt, everywhere && { color: COLORS.primary }]}>Anywhere in {county}</Text>
                   </TouchableOpacity>
-                );
-              })}
-            </View>
+                ) : null}
+                <View style={st.wrap}>
+                  {list.map((a) => {
+                    const on = selected.has(a.name.toLowerCase());
+                    return (
+                      <TouchableOpacity key={a.name} activeOpacity={0.85} onPress={() => toggle(a.name)} style={[st.area, on && st.areaOn]}>
+                        {on ? <Feather name="check" size={13} color={COLORS.primary} /> : null}
+                        <Text style={[st.areaTxt, on && { color: COLORS.primary }]}>{a.name}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
           </View>
         );
       })}
+
+      {custom.length ? (
+        <View style={{ marginTop: 12 }}>
+          <Text style={st.county}>Other areas you added</Text>
+          <View style={[st.wrap, { marginTop: 8 }]}>
+            {custom.map((name) => (
+              <TouchableOpacity key={name} onPress={() => toggle(name)} style={[st.area, st.areaOn]} accessibilityLabel={`Remove ${name}`}>
+                <Text style={[st.areaTxt, { color: COLORS.primary }]}>{name}</Text>
+                <Feather name="x" size={13} color={COLORS.primary} />
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      ) : null}
     </View>
   );
 }
@@ -247,4 +269,11 @@ const st = StyleSheet.create({
   county:  { fontSize: 12, fontWeight: '800', color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
   countyAll: { fontSize: 12, fontWeight: '700', color: COLORS.primary },
   areaTxt: { fontSize: 13, fontWeight: '600', color: COLORS.textBody },
+  countyCard:   { marginTop: 10, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.md, backgroundColor: '#fff' },
+  countyCardOn: { borderColor: COLORS.primaryLight },
+  countyHead:   { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingVertical: 14 },
+  countyName:   { flex: 1, fontSize: 15, fontWeight: '700', color: COLORS.text },
+  countyCount:  { fontSize: 12, fontWeight: '700', color: COLORS.textMuted },
+  countyBody:   { paddingHorizontal: 14, paddingBottom: 14, gap: 10 },
+  anywhere:     { alignSelf: 'flex-start', borderStyle: 'dashed' },
 });
