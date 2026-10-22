@@ -47,6 +47,12 @@ export const caregiverApi = {
   availability: () => api.get('/caregivers/availability/'),
   addAvailability: (payload) => api.post('/caregivers/availability/', payload),
   removeAvailability: (id) => api.delete(`/caregivers/availability/${id}/`),
+  // Verification: GET status + documents; POST multipart (id_number, id_front, id_back,
+  // good_conduct, nursing?, cna?, other*). Same endpoints as the mobile app.
+  verification: () => api.get('/caregivers/verification/'),
+  submitVerification: (form, onUploadProgress) => api.post('/caregivers/verification/', form, { timeout: 120000, onUploadProgress }),
+  // Onboarding, after verification is approved: saves the profile and marks the step done.
+  setupProfile: (payload) => api.post('/caregivers/me/setup-profile/', payload),
 };
 
 export const bookingApi = {

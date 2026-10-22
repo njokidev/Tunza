@@ -1,5 +1,5 @@
 """
-New caregivers: documents -> verification wait -> profile -> work areas -> availability.
+New caregivers: documents -> profile -> work areas -> availability (the background check runs alongside).
 /api/auth/me/ tells the apps which screen is next (caregiver_setup.next).
 """
 from django.utils import timezone
@@ -43,11 +43,11 @@ class CaregiverSetupTests(APITestCase):
         self.cp.verification_status = 'pending'
         self.cp.verification_submitted_at = timezone.now()
         self.cp.save()
+        # The background check doesn't block: profile setup comes straight after documents.
         s = self.setup()
-        self.assertEqual(s['next'], 'verification')
+        self.assertEqual(s['next'], 'profile')
+        self.assertFalse(s['verified'])
         self.assertIsNotNone(s['verification_expected_by'])
-        self.approve()
-        self.assertEqual(self.nxt(), 'profile')
         self.assertEqual(self.good_profile().status_code, 200)
         self.assertEqual(self.nxt(), 'areas')
         self.cp.refresh_from_db()
@@ -56,7 +56,9 @@ class CaregiverSetupTests(APITestCase):
         self.cp.save()
         self.assertEqual(self.nxt(), 'availability')
         Availability.objects.create(caregiver=self.cp, day=0, start_time='08:00', end_time='17:00')
-        self.assertIsNone(self.nxt())
+        self.assertIsNone(self.nxt())   # app opens, still unverified
+        self.approve()
+        self.assertTrue(self.setup()['verified'])
 
     def test_rejected_goes_back_to_documents(self):
         self.cp.verification_status = 'rejected'
@@ -66,10 +68,11 @@ class CaregiverSetupTests(APITestCase):
         self.assertEqual(s['next'], 'documents')
         self.assertEqual(s['verification_note'], 'ID photo is blurry')
 
-    def test_profile_step_needs_approval(self):
+    def test_profile_step_needs_documents(self):
+        self.assertEqual(self.good_profile().status_code, 403)
         self.cp.verification_status = 'pending'
         self.cp.save()
-        self.assertEqual(self.good_profile().status_code, 403)
+        self.assertEqual(self.good_profile().status_code, 200)
 
     def test_profile_step_validates(self):
         self.approve()
@@ -79,16 +82,35 @@ class CaregiverSetupTests(APITestCase):
             self.assertIn(k, r.data)
         self.assertEqual(self.nxt(), 'profile')
 
-    def test_unverified_later_keeps_app_access(self):
+    def test_unverified_caregiver_hidden_from_families(self):
+        self.cp.verification_status = 'pending'
+        self.cp.save()
+        fam = User.objects.create_user(email='fam2@t.ke', password='pass12345', full_name='Fam Two',
+                                       role='patient', phone='254722000333', phone_verified=True)
+        self.client.force_authenticate(fam)
+        ids = [c['id'] for c in self.client.get('/api/caregivers/?verified=false').data.get('results', [])]
+        self.assertNotIn(str(self.cp.id), ids)
+        self.assertEqual(self.client.get(f'/api/caregivers/{self.cp.id}/').status_code, 404)
+        self.client.force_authenticate(self.u)
+        self.assertEqual(self.client.get(f'/api/caregivers/{self.cp.id}/').status_code, 200)
+
+    def test_rejected_after_setup_goes_back_to_documents(self):
         self.approve()
-        self.assertEqual(self.good_profile().status_code, 200)
+        self.good_profile()
         self.cp.refresh_from_db()
-        self.cp.work_areas = ['Nakuru Town']
+        self.cp.verification_status = 'rejected'
+        self.cp.save()
+        self.u.is_verified = False
+        self.u.save()
+        self.assertEqual(self.nxt(), 'documents')
+
+    def test_setup_without_documents_still_needs_documents(self):
+        # e.g. an old account that set hours before document upload existed
+        self.cp.profile_completed_at = timezone.now()
+        self.cp.work_areas = ['Kilimani']
         self.cp.save()
         Availability.objects.create(caregiver=self.cp, day=0, start_time='08:00', end_time='17:00')
-        self.cp.verification_status = 'pending'   # admin "unverify"
-        self.cp.save()
-        self.assertIsNone(self.nxt())
+        self.assertEqual(self.nxt(), 'documents')
 
     def test_families_have_no_caregiver_setup(self):
         fam = User.objects.create_user(email='fam@t.ke', password='pass12345', full_name='Fam Test',

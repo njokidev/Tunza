@@ -24,6 +24,7 @@ import Applications from './pages/patient/Applications';
 import CaregiverDashboard from './pages/caregiver/Dashboard';
 import OpenJobs from './pages/caregiver/OpenJobs';
 import ProfileEditor from './pages/caregiver/ProfileEditor';
+import CaregiverSetup from './pages/caregiver/Setup';
 
 import Bookings from './pages/shared/Bookings';
 import Messages from './pages/shared/Messages';
@@ -54,6 +55,7 @@ export default function App() {
       <Route path="/terms" element={<Legal kind="terms" />} />
       <Route path="/privacy" element={<Legal kind="privacy" />} />
       <Route path="/welcome" element={<Welcome />} />
+      <Route path="/caregiver/setup" element={<CaregiverSetup />} />
 
       <Route element={<RequireRole roles={['patient']} />}>
         <Route element={<Layout />}>

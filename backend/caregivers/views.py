@@ -34,17 +34,25 @@ class CaregiverListView(generics.ListAPIView):
         language = self.request.query_params.get('language')
         if language:
             qs = qs.filter(languages__icontains=language)
-        # filter verified only by default
-        verified = self.request.query_params.get('verified', 'true')
-        if verified == 'true':
+        # Families only ever see verified caregivers. Caregivers still being checked
+        # use the app (to set up their profile) but stay hidden until approved.
+        if getattr(self.request.user, 'role', None) != 'admin' or self.request.query_params.get('verified', 'true') == 'true':
             qs = qs.filter(user__is_verified=True)
         return qs
 
 
 class CaregiverDetailView(generics.RetrieveAPIView):
-    queryset         = CaregiverProfile.objects.select_related('user').prefetch_related('specializations', 'availability')
     serializer_class = CaregiverProfileSerializer
     lookup_field     = 'id'
+
+    def get_queryset(self):
+        qs = CaregiverProfile.objects.select_related('user').prefetch_related('specializations', 'availability')
+        user = self.request.user
+        if getattr(user, 'role', None) == 'admin':
+            return qs
+        # Unverified caregivers (still being checked) are only visible to themselves.
+        from django.db.models import Q
+        return qs.filter(Q(user__is_verified=True) | Q(user_id=getattr(user, 'id', None)))
 
 
 class MyCaregiverProfileView(generics.RetrieveUpdateAPIView):
@@ -63,7 +71,8 @@ class MyCaregiverProfileView(generics.RetrieveUpdateAPIView):
 
 class ProfileSetupView(APIView):
     """
-    POST — onboarding step after verification is approved: the profile families see.
+    POST — onboarding step after the documents are in (while the background check runs,
+    or after approval): the profile families will see.
       bio (40+ characters), years_exp, hourly_rate (KES 100+), specialization_ids (1+),
       languages (1+), gender (optional), day_shift_rate / night_shift_rate (optional).
     Saves everything and marks the profile step done.
@@ -74,8 +83,9 @@ class ProfileSetupView(APIView):
 
     def post(self, request):
         profile, _ = CaregiverProfile.objects.get_or_create(user=request.user)
-        if profile.verification_status != CaregiverProfile.VerificationStatus.APPROVED and not request.user.is_verified:
-            return Response({'detail': 'You can set up your profile once your documents are approved.'},
+        VS = CaregiverProfile.VerificationStatus
+        if profile.verification_status not in (VS.PENDING, VS.APPROVED) and not request.user.is_verified:
+            return Response({'detail': 'Upload your documents first, then set up your profile.'},
                             status=status.HTTP_403_FORBIDDEN)
 
         allowed = ['bio', 'years_exp', 'hourly_rate', 'specialization_ids', 'languages', 'gender',

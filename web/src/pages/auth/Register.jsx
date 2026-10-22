@@ -46,7 +46,7 @@ export default function Register() {
     try {
       const me = await register({ ...form, phone });
       navigate(me.phone_verification_required && !me.phone_verified ? '/verify-phone'
-        : me.role === 'caregiver' ? '/caregiver/profile?welcome=1' : '/welcome', { replace: true });
+        : me.role === 'caregiver' ? '/caregiver/setup' : '/welcome', { replace: true });
     } catch (err) {
       setError(errorMessage(err));
     } finally {

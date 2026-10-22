@@ -12,6 +12,7 @@ import { BookingCard } from '../shared/Bookings';
 import JobCard from './JobCard';
 import ApplyModal from './ApplyModal';
 import { useAppliedJobs, withDistance } from './OpenJobs';
+import VerificationBanner from '../../components/VerificationBanner';
 
 function AvailabilityToggle({ profile, onChange }) {
   const [saving, setSaving] = useState(false);
@@ -96,12 +97,7 @@ export default function CaregiverDashboard() {
         <AvailabilityToggle profile={p} onChange={(profile) => setData((d) => ({ ...d, profile }))} />
       </div>
 
-      {!user.is_verified && (
-        <Alert kind="info">
-          <span className="font-semibold">Verification pending.</span> Families can't find you in Smart Match or Browse until Tunza verifies your ID.
-          Make sure your ID number is on your <Link to="/caregiver/profile" className="font-semibold underline">profile</Link>.
-        </Alert>
-      )}
+      <VerificationBanner />
       {missing.length > 0 && (
         <Card className="flex flex-col gap-4 border-brand-100 bg-brand-50/60 p-5 sm:flex-row sm:items-center">
           <div className="rounded-xl bg-white p-2.5 text-brand-700"><UserCog className="h-5 w-5" /></div>

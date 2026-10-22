@@ -10,6 +10,7 @@ import { useAuth } from '../../context/AuthContext';
 import BookingCard from '../../components/BookingCard';
 import JobCard from '../../components/JobCard';
 import { Avatar, Button, Card, LoadingScreen, Notice, SectionLabel, StatCard, StatusPill } from '../../components/ui';
+import VerificationBanner from '../../components/VerificationBanner';
 import { COLORS as C, TYPE } from '../../theme';
 import { BOOKING_STATUS } from '../../lib/constants';
 import { useAppliedJobs } from '../../lib/applied';
@@ -150,12 +151,15 @@ export default function CaregiverHomeScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
+      {/* ── Background check in progress ── */}
+      <VerificationBanner onPressProfile={() => navigation.navigate('Profile')} />
+
       {/* ── Availability toggle ── */}
       <Card style={[s.availCard, p.is_available && { borderColor: '#A7F3D0', backgroundColor: C.successLight }]}>
         <View style={[s.dot, { backgroundColor: p.is_available ? C.success : C.textFaint }]} />
         <View style={{ flex: 1 }}>
           <Text style={TYPE.h4}>{p.is_available ? 'Available for new clients' : 'Not taking clients'}</Text>
-          <Text style={TYPE.caption}>{p.is_available ? 'Families can find and book you.' : "You won't appear in Smart Match or Browse."}</Text>
+          <Text style={TYPE.caption}>{!user?.is_verified ? "You'll show to families once you're approved." : p.is_available ? 'Families can find and book you.' : "You won't appear in Smart Match or Browse."}</Text>
         </View>
         <Switch value={!!p.is_available} onValueChange={toggleAvailability} disabled={savingAvail}
           trackColor={{ true: C.success, false: C.border }} thumbColor="#fff" />
