@@ -35,6 +35,8 @@ class Base(APITestCase):
     def booking(self, **kw):
         start = kw.pop('start', timezone.now() + timedelta(days=1))
         hours = kw.pop('hours', 4)
+        kw.setdefault('start_pin', '1234')
+        kw.setdefault('end_pin', '5678')
         b = Booking.objects.create(patient=self.fam, caregiver=self.cp, care_type=kw.pop('care_type', 'daycare'),
                                    start_date=start, end_date=start + timedelta(hours=hours),
                                    address='Hse 12, Othaya Rd, Kileleshwa', latitude=-1.2806, longitude=36.7836, **kw)
@@ -125,12 +127,12 @@ class GPSTests(Base):
         b = self.booking(status='accepted')
         self.as_(self.carer)
         r = self.client.patch(f'/api/bookings/{b.id}/status/',
-                              {'status': 'ongoing', 'latitude': -1.2808, 'longitude': 36.7838}, format='json')
+                              {'status': 'ongoing', 'pin': '1234', 'latitude': -1.2808, 'longitude': 36.7838}, format='json')
         self.assertEqual(r.status_code, 200, r.data)
         self.assertLess(r.data['check_in_distance_m'], 50)
         self.assertFalse(r.data['check_in_flagged'])
         r = self.client.patch(f'/api/bookings/{b.id}/status/',
-                              {'status': 'completed', 'latitude': -1.30, 'longitude': 36.80}, format='json')
+                              {'status': 'completed', 'pin': '5678', 'latitude': -1.30, 'longitude': 36.80}, format='json')
         self.assertGreater(r.data['check_out_distance_m'], 500)
         self.assertTrue(r.data['check_in_flagged'])
         self.assertIsNotNone(r.data['completed_at'])
@@ -138,7 +140,7 @@ class GPSTests(Base):
     def test_no_location_still_starts_the_visit(self):
         b = self.booking(status='accepted')
         self.as_(self.carer)
-        r = self.client.patch(f'/api/bookings/{b.id}/status/', {'status': 'ongoing'}, format='json')
+        r = self.client.patch(f'/api/bookings/{b.id}/status/', {'status': 'ongoing', 'pin': '1234'}, format='json')
         self.assertEqual(r.status_code, 200)
         self.assertIsNotNone(r.data['check_in_at'])
         self.assertIsNone(r.data['check_in_distance_m'])

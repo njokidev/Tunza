@@ -74,11 +74,18 @@ class UpdateBookingStatusView(APIView):
                 'allowed': allowed_next(user.role, booking.status),
             }, status=status.HTTP_400_BAD_REQUEST)
 
+        # Start and end of a visit need the PIN the family gives the caregiver on the day.
+        if user.role == 'caregiver' and new_status in (Booking.Status.ONGOING, Booking.Status.COMPLETED):
+            pin_error = check_visit_pin(booking, new_status, request.data.get('pin'))
+            if pin_error:
+                return pin_error
+
         now = timezone.now()
         booking.status = new_status
         booking.notes  = request.data.get('notes', booking.notes)
         if new_status == Booking.Status.ACCEPTED:
             booking.accepted_at = now
+            booking.issue_pins()
         elif new_status == Booking.Status.ONGOING:
             # GPS check-in: the app sends where the phone is when the visit starts
             record_position(booking, 'in', request.data.get('latitude'), request.data.get('longitude'))
@@ -119,6 +126,12 @@ class UpdateBookingStatusView(APIView):
         label = new_status.capitalize()
         patient_msg   = f'Your booking with {booking.caregiver.user.full_name} was {new_status}.'
         caregiver_msg = f'Your booking with {booking.patient.full_name} was {new_status}.'
+        if new_status == Booking.Status.ACCEPTED:
+            patient_msg += (f' Your start PIN is {booking.start_pin}. Give it to the caregiver only when '
+                            'they arrive. Find it any time under Bookings.')
+        elif new_status == Booking.Status.ONGOING:
+            patient_msg = (f'{booking.caregiver.user.full_name} has started the visit. Your end PIN is '
+                           f'{booking.end_pin}. Give it to them only when the visit is finished.')
         if user.role in ('caregiver', 'admin'):
             Notification.objects.create(user=booking.patient, title=f'Booking {label}',
                                         body=patient_msg, type='booking')
@@ -126,6 +139,39 @@ class UpdateBookingStatusView(APIView):
             Notification.objects.create(user=booking.caregiver.user, title=f'Booking {label}',
                                         body=caregiver_msg, type='booking')
         return Response(BookingSerializer(booking, context={'request': request}).data)
+
+
+def check_visit_pin(booking, new_status, pin):
+    """None if the PIN is right, else the error Response. Wrong tries are counted;
+    after Booking.MAX_PIN_ATTEMPTS the booking locks until Tunza support helps."""
+    which = 'start' if new_status == Booking.Status.ONGOING else 'end'
+    expected = booking.start_pin if which == 'start' else booking.end_pin
+    if booking.pin_locked:
+        return Response({'detail': 'Too many wrong PINs. Contact Tunza support to continue this visit.',
+                         'code': 'pin_locked'}, status=status.HTTP_423_LOCKED)
+    if not expected:  # booking accepted before PINs existed and never backfilled
+        booking.issue_pins()
+        booking.save(update_fields=['start_pin', 'end_pin', 'pin_attempts'])
+        return Response({'detail': 'A PIN has just been sent to the family. Ask them for it.',
+                         'code': 'pin_issued'}, status=status.HTTP_400_BAD_REQUEST)
+    pin = str(pin or '').strip()
+    if not pin:
+        return Response({'detail': f'Enter the {which} PIN from the family.', 'code': 'pin_required'},
+                        status=status.HTTP_400_BAD_REQUEST)
+    if pin != expected:
+        booking.pin_attempts += 1
+        booking.save(update_fields=['pin_attempts'])
+        left = Booking.MAX_PIN_ATTEMPTS - booking.pin_attempts
+        if left <= 0:
+            Notification.objects.create(
+                user=booking.patient, type='booking', title='Visit PIN locked',
+                body='The caregiver entered a wrong PIN too many times. Tunza support will contact you.')
+            return Response({'detail': 'Too many wrong PINs. Contact Tunza support to continue this visit.',
+                             'code': 'pin_locked'}, status=status.HTTP_423_LOCKED)
+        return Response({'detail': f'Wrong PIN. {left} tr{"y" if left == 1 else "ies"} left.',
+                         'code': 'pin_wrong', 'attempts_left': left}, status=status.HTTP_400_BAD_REQUEST)
+    booking.pin_attempts = 0
+    return None
 
 
 class AdminBookingListView(generics.ListAPIView):

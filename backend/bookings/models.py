@@ -46,6 +46,11 @@ class Booking(models.Model):
     check_out_latitude  = models.FloatField(null=True, blank=True)
     check_out_longitude = models.FloatField(null=True, blank=True)
     check_out_distance_m = models.PositiveIntegerField(null=True, blank=True)
+    # Visit PINs: the family reads these out to the caregiver. The start PIN begins
+    # the visit; the end PIN finishes it and releases the caregiver's pay.
+    start_pin     = models.CharField(max_length=4, blank=True)
+    end_pin       = models.CharField(max_length=4, blank=True)
+    pin_attempts  = models.PositiveSmallIntegerField(default=0)   # wrong tries since the last good one
     is_paid       = models.BooleanField(default=False)
     notes         = models.TextField(blank=True)
     created_at    = models.DateTimeField(auto_now_add=True)
@@ -56,6 +61,22 @@ class Booking(models.Model):
 
     def __str__(self):
         return f'Booking {self.id} — {self.patient.full_name} → {self.caregiver.user.full_name}'
+
+    MAX_PIN_ATTEMPTS = 5
+
+    @property
+    def pin_locked(self):
+        return self.pin_attempts >= self.MAX_PIN_ATTEMPTS
+
+    def issue_pins(self):
+        """Two different random 4-digit PINs. Called when the caregiver accepts."""
+        import secrets
+        self.start_pin = f'{secrets.randbelow(10000):04d}'
+        while True:
+            self.end_pin = f'{secrets.randbelow(10000):04d}'
+            if self.end_pin != self.start_pin:
+                break
+        self.pin_attempts = 0
 
     def calculate_amount(self):
         """Hourly by default; a caregiver's shift price is used when the visit is a shift:

@@ -56,13 +56,14 @@ class RegisterSerializer(serializers.ModelSerializer):
 class UserSerializer(serializers.ModelSerializer):
     phone_verification_required = serializers.SerializerMethodField()
     needs_onboarding = serializers.SerializerMethodField()
+    caregiver_setup = serializers.SerializerMethodField()
 
     class Meta:
         model  = User
         fields = ['id', 'email', 'full_name', 'phone', 'phone_verified', 'phone_verification_required',
                   'role', 'avatar', 'is_verified', 'home_area', 'home_address', 'home_latitude',
                   'home_longitude', 'onboarding_completed_at', 'needs_onboarding',
-                  'terms_accepted_at', 'date_joined']
+                  'caregiver_setup', 'terms_accepted_at', 'date_joined']
         read_only_fields = ['id', 'email', 'role', 'is_verified', 'phone_verified',
                             'onboarding_completed_at', 'terms_accepted_at', 'date_joined']
 
@@ -73,6 +74,25 @@ class UserSerializer(serializers.ModelSerializer):
     def get_needs_onboarding(self, obj):
         # Families get a short first-run setup: home area + who the care is for.
         return obj.role == User.Role.PATIENT and obj.onboarding_completed_at is None
+
+    def get_caregiver_setup(self, obj):
+        """
+        New caregivers go through three screens, in this order, before the app opens:
+        documents -> work areas -> weekly availability. `next` is the first one not
+        done yet, or None when they're through (the apps route on it).
+        """
+        if obj.role != User.Role.CAREGIVER:
+            return None
+        profile = getattr(obj, 'caregiver_profile', None)
+        if profile is None:
+            return {'next': 'documents', 'documents': False, 'areas': False, 'availability': False}
+        done = {
+            'documents': profile.verification_status != 'not_submitted',
+            'areas': bool(profile.work_areas) or bool(profile.location_name),
+            'availability': profile.availability.exists(),
+        }
+        nxt = next((k for k in ('documents', 'areas', 'availability') if not done[k]), None)
+        return {'next': nxt, **done}
 
     def validate_phone(self, value):
         return clean_phone(value, exclude_user=self.instance)

@@ -14,6 +14,7 @@ class BookingSerializer(serializers.ModelSerializer):
     contact = serializers.SerializerMethodField()
     family_rating = serializers.SerializerMethodField()
     check_in_flagged = serializers.SerializerMethodField()
+    visit_pin = serializers.SerializerMethodField()
 
     class Meta:
         model  = Booking
@@ -24,7 +25,7 @@ class BookingSerializer(serializers.ModelSerializer):
             'total_amount', 'is_paid', 'notes', 'review', 'family_review', 'allowed_actions',
             'contact', 'family_rating', 'decline_reason', 'accepted_at', 'completed_at',
             'check_in_at', 'check_in_distance_m', 'check_out_at', 'check_out_distance_m', 'check_in_flagged',
-            'created_at',
+            'visit_pin', 'created_at',
         ]
         read_only_fields = ['id', 'patient', 'status', 'total_amount', 'is_paid', 'decline_reason',
                             'accepted_at', 'completed_at', 'check_in_at', 'check_in_distance_m',
@@ -71,6 +72,24 @@ class BookingSerializer(serializers.ModelSerializer):
         from django.conf import settings
         limit = settings.CHECKIN_MAX_DISTANCE_M
         return any(d is not None and d > limit for d in (obj.check_in_distance_m, obj.check_out_distance_m))
+
+    def get_visit_pin(self, obj):
+        """
+        The family (and admin) see the PIN they need to give next; the caregiver only
+        learns that one is needed. The end PIN shows only once the visit has started.
+        """
+        request = self.context.get('request')
+        viewer = getattr(request, 'user', None)
+        if not viewer or not viewer.is_authenticated:
+            return None
+        needed = {'accepted': 'start', 'ongoing': 'end'}.get(obj.status)
+        out = {'needed': needed, 'locked': obj.pin_locked}
+        if viewer.role == 'admin' or (viewer.role == 'patient' and obj.patient_id == viewer.id):
+            if needed == 'start':
+                out['pin'] = obj.start_pin
+            elif needed == 'end':
+                out['pin'] = obj.end_pin
+        return out
 
     def get_allowed_actions(self, obj):
         # Status moves the current user may make; lets the apps show the right buttons
