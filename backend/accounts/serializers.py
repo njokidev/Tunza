@@ -75,22 +75,23 @@ class UserSerializer(serializers.ModelSerializer):
         # Families get a short first-run setup: home area + who the care is for.
         return obj.role == User.Role.PATIENT and obj.onboarding_completed_at is None
 
-    CAREGIVER_STEPS = ('documents', 'verification', 'profile', 'areas', 'availability')
+    CAREGIVER_STEPS = ('documents', 'profile', 'areas', 'availability')
 
     def get_caregiver_setup(self, obj):
         """
         New caregivers go through these screens, in order, before the app opens:
           documents     upload ID, good conduct, certificates
-          verification  wait for Tunza's background check (2-3 days)
           profile       bio, experience, rate, specialties, languages
           areas         where they'll work
           availability  days and hours
         `next` is the first one not done yet, or None when they're through (the apps
         route on it). A rejected application goes back to `documents`.
 
-        The verification wait only applies the first time: a caregiver who has already
-        finished setup and is later un-verified keeps using the app (hidden from search)
-        so they can still see their bookings.
+        The background check (2-3 days) does NOT block the app: once the documents are
+        in, caregivers set up their profile and use the app while they wait. Until an
+        admin approves them they are hidden from families and can't be booked or apply
+        (see caregivers/views.py, bookings/serializers.py, care_requests/views.py).
+        `verified` and the verification_* fields let the apps show where the check is.
         """
         if obj.role != User.Role.CAREGIVER:
             return None
@@ -99,17 +100,17 @@ class UserSerializer(serializers.ModelSerializer):
         if profile is None:
             done = dict.fromkeys(self.CAREGIVER_STEPS, False)
         else:
-            setup_finished = profile.profile_completed_at is not None
             done = {
-                'documents': status in ('pending', 'approved') or setup_finished,
-                'verification': status == 'approved' or obj.is_verified or setup_finished,
-                'profile': setup_finished,
+                # Documents must actually be in. A rejected application goes back here.
+                'documents': status in ('pending', 'approved'),
+                'profile': profile.profile_completed_at is not None,
                 'areas': bool(profile.work_areas) or bool(profile.location_name),
                 'availability': profile.availability.exists(),
             }
         nxt = next((k for k in self.CAREGIVER_STEPS if not done[k]), None)
         return {
             'next': nxt, **done,
+            'verified': status == 'approved' or obj.is_verified,
             'verification_status': status,
             'verification_submitted_at': profile.verification_submitted_at if profile else None,
             'verification_expected_by': profile.verification_expected_by if profile else None,

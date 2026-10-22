@@ -2,9 +2,11 @@ from django.db import migrations, models
 
 
 def backfill(apps, schema_editor):
-    """Caregivers who already finished the old setup (they have availability) skip the new profile step."""
+    """Caregivers who already finished the old setup (documents in, availability set) skip the new profile step."""
     CaregiverProfile = apps.get_model('caregivers', 'CaregiverProfile')
-    for p in CaregiverProfile.objects.filter(availability__isnull=False).distinct():
+    done = CaregiverProfile.objects.filter(availability__isnull=False,
+                                           verification_status__in=['pending', 'approved']).distinct()
+    for p in done:
         p.profile_completed_at = p.updated_at
         p.save(update_fields=['profile_completed_at'])
 
