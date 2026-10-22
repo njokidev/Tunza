@@ -5,7 +5,7 @@ import { caregiverApi } from '../../../api';
 import { Button, Card, Chip, Input, Notice, ScreenHeader } from '../../../components/ui';
 import { useAuth } from '../../../context/AuthContext';
 import { LANGUAGES, isNurseOnly } from '../../../lib/constants';
-import { unwrap } from '../../../lib/format';
+import { fmtDay, unwrap } from '../../../lib/format';
 import { COLORS as C, TYPE } from '../../../theme';
 import SetupFooter from './SetupFooter';
 
@@ -13,12 +13,13 @@ const MIN_BIO = 40;
 const MIN_RATE = 100;
 
 /**
- * Caregiver setup, step 1 of 3 (after verification is approved): the profile
+ * Caregiver setup, step 1 of 3 (right after the documents, while they're checked): the profile
  * families see — bio, experience, rate, the care they offer, languages.
  * Work areas and availability come next.
  */
 export default function SetupProfileScreen() {
-  const { refreshUser } = useAuth();
+  const { user, refreshUser } = useAuth();
+  const setup = user?.caregiver_setup || {};
   const [specs, setSpecs] = useState([]);
   const [nurse, setNurse] = useState(false);
   const [form, setForm] = useState({
@@ -103,10 +104,19 @@ export default function SetupProfileScreen() {
           subtitle="This is what families see when they find you. A clear, honest profile gets booked faster." />
 
         <View style={{ paddingHorizontal: 20, gap: 12 }}>
-          <Card style={st.approved}>
-            <Feather name="shield" size={18} color={C.success} />
-            <Text style={[TYPE.label, { flex: 1, color: C.success }]}>You're verified. Families will see a background-checked badge.</Text>
-          </Card>
+          {setup.verified ? (
+            <Card style={st.approved}>
+              <Feather name="shield" size={18} color={C.success} />
+              <Text style={[TYPE.label, { flex: 1, color: C.success }]}>You're verified. Families will see a background-checked badge.</Text>
+            </Card>
+          ) : (
+            <Card style={st.pending}>
+              <Feather name="clock" size={18} color={C.primaryDark} />
+              <Text style={[TYPE.label, { flex: 1, color: C.primaryDark }]}>
+                Thank you! We're checking your documents{setup.verification_expected_by ? ` and will get back to you by ${fmtDay(setup.verification_expected_by)}` : ' (2–3 days)'}. Set up your profile now so families can book you as soon as you're approved.
+              </Text>
+            </Card>
+          )}
 
           {loadError ? <Notice>{loadError}</Notice> : null}
 
@@ -177,6 +187,7 @@ export default function SetupProfileScreen() {
 }
 
 const st = StyleSheet.create({
+  pending:  { flexDirection: 'row', alignItems: 'flex-start', gap: 10, backgroundColor: C.primaryXLight, borderColor: C.primaryLight },
   approved: { flexDirection: 'row', alignItems: 'center', gap: 10, backgroundColor: C.successLight, borderColor: C.successLight },
   h:    { fontSize: 15, fontWeight: '800', color: C.text, marginBottom: 12 },
   sub:  { fontSize: 13, fontWeight: '800', color: C.text, marginBottom: 10 },

@@ -42,7 +42,6 @@ import EarningsScreen          from '../screens/caregiver/EarningsScreen';
 import OpenRequestsScreen      from '../screens/caregiver/OpenRequestsScreen';
 import ApplyToRequestScreen    from '../screens/caregiver/ApplyToRequestScreen';
 import VerificationScreen      from '../screens/caregiver/VerificationScreen';
-import SetupWaitingScreen      from '../screens/caregiver/setup/SetupWaitingScreen';
 import SetupProfileScreen      from '../screens/caregiver/setup/SetupProfileScreen';
 import SetupAreasScreen        from '../screens/caregiver/setup/SetupAreasScreen';
 import SetupAvailabilityScreen from '../screens/caregiver/setup/SetupAvailabilityScreen';
@@ -174,11 +173,8 @@ function RootNavigator() {
       ) : user.role === 'caregiver' && user.caregiver_setup?.next === 'documents' ? (
         // New caregivers: ID, good conduct and certificates (again if rejected)
         <Stack.Screen name="SetupDocuments" component={VerificationScreen} initialParams={{ onboarding: true }} />
-      ) : user.role === 'caregiver' && user.caregiver_setup?.next === 'verification' ? (
-        // Wait for the background check (2-3 days); moves on by itself once approved
-        <Stack.Screen name="SetupWaiting" component={SetupWaitingScreen} />
       ) : user.role === 'caregiver' && user.caregiver_setup?.next === 'profile' ? (
-        // Approved. Step 1 of 3: bio, rate, care types, languages
+        // Step 1 of 3 (while the background check runs): bio, rate, care types, languages
         <Stack.Screen name="SetupProfile" component={SetupProfileScreen} />
       ) : user.role === 'caregiver' && user.caregiver_setup?.next === 'areas' ? (
         // Step 2 of 3: where they'll work (county -> areas)

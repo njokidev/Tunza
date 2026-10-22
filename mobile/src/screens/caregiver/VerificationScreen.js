@@ -61,7 +61,7 @@ function appendFile(form, field, f) {
  * for Tunza's background check (2–3 days).
  */
 export default function VerificationScreen({ navigation, route }) {
-  // During first-time setup: no Back, and after submitting the app moves to the waiting screen.
+  // During first-time setup: no Back, and after submitting the app moves on to profile setup.
   const onboarding = !!route?.params?.onboarding;
   const { refreshUser } = useAuth();
   const goBack = onboarding ? undefined : () => navigation.goBack();
@@ -147,7 +147,7 @@ export default function VerificationScreen({ navigation, route }) {
         if (ev.total) setProgress(Math.round((ev.loaded / ev.total) * 100));
       });
       if (onboarding) {
-        // /auth/me/ now says "verification": the navigator opens the waiting screen.
+        // /auth/me/ now says "profile": the navigator opens profile setup.
         await refreshUser().catch(() => { setInfo(data); setJustSubmitted(true); });
         return;
       }
@@ -298,7 +298,7 @@ function Submitted({ info, justSubmitted, onDone, onboarding }) {
 
       <Notice kind="info" style={{ marginTop: 14 }}>
         {onboarding
-          ? "Once you're approved, you'll set up your profile: bio, rate, areas and hours."
+          ? 'Next, set up your profile while we check your documents: bio, rate, areas and hours.'
           : "While you wait, finish your profile — add your work areas, specialties and weekly availability so you're ready for families the day you're approved."}
       </Notice>
       <Button title={onboarding ? 'Continue' : justSubmitted ? 'Done' : 'Back'} iconName={onboarding ? 'arrow-right' : undefined}
