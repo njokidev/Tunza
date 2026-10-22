@@ -62,6 +62,9 @@ class VerifyUserView(APIView):
             return Response({'detail': 'Only caregivers are verified.'}, status=status.HTTP_400_BAD_REQUEST)
         user.is_verified = True
         user.save(update_fields=['is_verified'])
+        from caregivers.models import CaregiverProfile
+        CaregiverProfile.objects.filter(user=user).update(
+            verification_status=CaregiverProfile.VerificationStatus.APPROVED, verification_note='')
         Notification.objects.create(
             user=user, title='You are verified',
             body='Your Tunza profile is verified. Families can now find and book you.',

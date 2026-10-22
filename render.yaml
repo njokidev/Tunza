@@ -59,6 +59,10 @@ services:
         sync: false
       - key: MPESA_PASSKEY
         sync: false
+      # Private storage for caregiver ID / good conduct uploads (required:
+      # Render's disk is wiped on every deploy). Cloudinary → API Keys.
+      - key: CLOUDINARY_URL
+        sync: false
 
   # ── React web app (static) ────────────────────────────────────────────────
   - type: web

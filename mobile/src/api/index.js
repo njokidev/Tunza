@@ -108,6 +108,16 @@ export const caregiverApi = {
   availability:     ()       => api.get('/caregivers/availability/'),
   addAvailability:  (data)   => api.post('/caregivers/availability/', data),
   delAvailability:  (id)     => api.delete(`/caregivers/availability/${id}/`),
+  // Replace the whole week: slots = [{ day, start_time, end_time }]
+  saveAvailability: (slots)  => api.put('/caregivers/availability/', { slots }),
+  verification:     ()       => api.get('/caregivers/verification/'),
+  // form: FormData with id_number + files (id_front, id_back, good_conduct, nursing?, cna?, other*)
+  submitVerification: (form, onUploadProgress) => api.post('/caregivers/verification/', form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 120000,
+    transformRequest: (data) => data, // let React Native set the multipart boundary
+    onUploadProgress,
+  }),
 };
 
 // ── Bookings ──────────────────────────────────────────────────────────────────

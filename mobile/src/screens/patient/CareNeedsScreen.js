@@ -9,7 +9,8 @@ import { Button, Chip, Input, Notice } from '../../components/ui';
 import { AreaPicker, DateStrip } from '../../components/pickers';
 import { COLORS as C, RADIUS, SHADOWS, TYPE } from '../../theme';
 import {
-  BUDGET_BANDS, CARE_RECIPIENTS, DAYS, FALLBACK_SPECIALIZATIONS, SCHEDULE_TYPES,
+  BUDGET_BANDS, CARE_RECIPIENTS, CARE_TYPE_GROUPS, DAYS, FALLBACK_SPECIALIZATIONS, RECIPIENT_DEFAULT_CARE,
+  SCHEDULE_TYPES, careTypeMeta, isNurseOnly,
 } from '../../lib/constants';
 import { addDays, errorMessage, fmtDate, kes, recipientLabel, todayISODate, unwrap } from '../../lib/format';
 
@@ -32,7 +33,7 @@ export default function CareNeedsScreen({ route, navigation }) {
   const [step, setStep] = useState(preset ? 1 : 0);
   const [form, setForm] = useState({
     care_recipient: preset || '',
-    care_types: [],
+    care_types: preset && RECIPIENT_DEFAULT_CARE[preset] ? [RECIPIENT_DEFAULT_CARE[preset]] : [],
     special_needs: '',
     preferred_gender: '',
     preferred_language: '',
@@ -60,6 +61,21 @@ export default function CareNeedsScreen({ route, navigation }) {
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const toggle = (key, value) =>
     set({ [key]: form[key].includes(value) ? form[key].filter((v) => v !== value) : [...form[key], value] });
+
+  // Choosing who needs care pre-selects the obvious type (e.g. a child → Babysitting).
+  const pickRecipient = (value) => {
+    const prevDefault = RECIPIENT_DEFAULT_CARE[form.care_recipient];
+    const nextDefault = RECIPIENT_DEFAULT_CARE[value];
+    const untouched = form.care_types.length === 0 || (form.care_types.length === 1 && form.care_types[0] === prevDefault);
+    set({ care_recipient: value, ...(untouched ? { care_types: nextDefault ? [nextDefault] : [] } : {}) });
+  };
+
+  // Care types grouped into sections, each with an icon and a one-line description.
+  const grouped = useMemo(() => CARE_TYPE_GROUPS.map((g) => ({
+    ...g, items: specs.filter((sp) => careTypeMeta(sp.name).group === g.key),
+  })).filter((g) => g.items.length), [specs]);
+  const wantsMeds = form.care_types.some(isNurseOnly);
+  const isChild = form.care_recipient === 'child';
 
   const stepError = useMemo(() => {
     switch (step) {
@@ -146,7 +162,7 @@ export default function CareNeedsScreen({ route, navigation }) {
             {CARE_RECIPIENTS.map((c) => {
               const on = form.care_recipient === c.value;
               return (
-                <TouchableOpacity key={c.value} activeOpacity={0.85} onPress={() => set({ care_recipient: c.value })}
+                <TouchableOpacity key={c.value} activeOpacity={0.85} onPress={() => pickRecipient(c.value)}
                   style={[s.option, on && s.optionOn]}>
                   <View style={[s.optIcon, on && { backgroundColor: C.primary }]}>
                     <Feather name={c.icon} size={17} color={on ? '#fff' : C.primary} />
@@ -164,16 +180,51 @@ export default function CareNeedsScreen({ route, navigation }) {
 
         {step === 1 && (
           <View>
-            <Text style={s.q}>What kind of help?</Text>
-            <Text style={s.hint}>Pick all that apply — this is the biggest part of the match score.</Text>
-            <View style={s.wrap}>
-              {specs.map((sp) => (
-                <Chip key={sp.id} label={sp.name} active={form.care_types.includes(sp.name)} onPress={() => toggle('care_types', sp.name)} />
-              ))}
+            <View style={s.qRow}>
+              <Text style={[s.q, { flex: 1, marginBottom: 0 }]}>What care are you looking for?</Text>
+              {form.care_types.length ? <Text style={s.count}>{form.care_types.length} selected</Text> : null}
             </View>
-            <View style={{ marginTop: 20 }}>
+            <Text style={s.hint}>Pick everything that applies. This is the biggest part of how we match caregivers.</Text>
+
+            {grouped.map((g) => (
+              <View key={g.key} style={{ marginBottom: 6 }}>
+                <Text style={s.group}>{g.label}</Text>
+                <View style={s.grid}>
+                  {g.items.map((sp) => {
+                    const meta = careTypeMeta(sp.name);
+                    const on = form.care_types.includes(sp.name);
+                    return (
+                      <TouchableOpacity key={sp.id} activeOpacity={0.85} onPress={() => toggle('care_types', sp.name)}
+                        style={[s.tile, on && s.optionOn]} accessibilityRole="checkbox" accessibilityState={{ checked: on }}>
+                        <View style={s.tileTop}>
+                          <View style={[s.tileIcon, on && { backgroundColor: C.primary }]}>
+                            <Feather name={meta.icon} size={16} color={on ? '#fff' : C.primary} />
+                          </View>
+                          <Feather name={on ? 'check-circle' : 'circle'} size={18} color={on ? C.primary : C.border} />
+                        </View>
+                        <Text style={s.tileName}>{sp.name}</Text>
+                        {meta.hint ? <Text style={s.tileHint} numberOfLines={2}>{meta.hint}</Text> : null}
+                        {meta.nurseOnly ? (
+                          <View style={s.nurseTag}><Feather name="award" size={10} color={C.primary} /><Text style={s.nurseTxt}>Verified nurses</Text></View>
+                        ) : null}
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+            ))}
+
+            {wantsMeds ? (
+              <Notice kind="info" style={{ marginTop: 6 }}>
+                Medication administration is only done by caregivers whose nursing or CNA certificate Tunza has checked, so you may see fewer matches. List the medicines and times below.
+              </Notice>
+            ) : null}
+
+            <View style={{ marginTop: 16 }}>
               <Input label="Anything the caregiver should know?" multiline
-                placeholder="Medication, mobility, allergies, routines…"
+                placeholder={wantsMeds ? 'Medicines, doses and times, how they are taken (tablets, injections)…'
+                  : isChild ? "Children's ages, routines, school pick-up, allergies…"
+                    : 'Mobility, allergies, routines, what a good day looks like…'}
                 value={form.special_needs} onChangeText={(special_needs) => set({ special_needs })} />
             </View>
             <Text style={s.label}>Preferred caregiver gender</Text>
@@ -322,6 +373,17 @@ const s = StyleSheet.create({
   hint:     { fontSize: 13, color: C.textMuted, marginBottom: 14 },
   label:    { fontSize: 14, fontWeight: '800', color: C.text, marginTop: 22, marginBottom: 10 },
   wrap:     { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  qRow:     { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
+  count:    { fontSize: 12, fontWeight: '800', color: C.primary, backgroundColor: C.primaryXLight, paddingHorizontal: 8, paddingVertical: 3, borderRadius: RADIUS.pill, overflow: 'hidden' },
+  group:    { fontSize: 12, fontWeight: '800', color: C.textMuted, textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 8, marginBottom: 8 },
+  grid:     { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 10 },
+  tile:     { width: '48.5%', padding: 12, borderRadius: RADIUS.lg, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.card },
+  tileTop:  { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 },
+  tileIcon: { width: 32, height: 32, borderRadius: RADIUS.sm, backgroundColor: C.primaryXLight, alignItems: 'center', justifyContent: 'center' },
+  tileName: { fontSize: 14, fontWeight: '800', color: C.text },
+  tileHint: { fontSize: 12, color: C.textMuted, marginTop: 3, lineHeight: 16 },
+  nurseTag: { flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start', marginTop: 8, paddingHorizontal: 6, paddingVertical: 2, borderRadius: RADIUS.pill, backgroundColor: C.primaryXLight },
+  nurseTxt: { fontSize: 10, fontWeight: '800', color: C.primary },
 
   option:   { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderRadius: RADIUS.lg, borderWidth: 1.5, borderColor: C.border, backgroundColor: C.card, marginBottom: 10 },
   optionOn: { borderColor: C.primary, backgroundColor: C.primaryXLight },

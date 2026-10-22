@@ -33,7 +33,10 @@ export default function ApplyToRequestScreen({ route, navigation }) {
     } catch (e) {
       const msg = errorMessage(e);
       if (/already applied/i.test(msg)) await done();
-      else setError(msg);
+      else if (e?.response?.status === 409) {
+        // Taken by someone else or expired while they were writing.
+        Alert.alert('Job no longer available', msg, [{ text: 'OK', onPress: () => navigation.goBack() }]);
+      } else setError(msg);
     } finally {
       setSaving(false);
     }

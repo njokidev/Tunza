@@ -1,9 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, TouchableOpacity, ScrollView, StyleSheet, ActivityIndicator } from 'react-native';
 import { Feather } from '@expo/vector-icons';
 import * as Location from 'expo-location';
 import { COLORS, RADIUS } from '../theme';
-import { AREAS } from '../lib/constants';
+import { AREAS, AREA_COUNTIES } from '../lib/constants';
 import { addDays, todayISODate } from '../lib/format';
 
 const WD = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -131,6 +131,98 @@ export function AreaPicker({ value, onChange }) {
   );
 }
 
+/**
+ * Choose every area you'll take jobs in. value: array of area names.
+ * Areas are grouped by county with a "select all" per county; search filters the
+ * list, and anything not on the list can be added as a custom area.
+ */
+export function WorkAreasPicker({ value = [], onChange }) {
+  const [query, setQuery] = useState('');
+  const selected = new Set(value.map((v) => v.toLowerCase()));
+  const q = query.trim().toLowerCase();
+  const matches = q ? AREAS.filter((a) => a.name.toLowerCase().includes(q)) : AREAS;
+  const exact = AREAS.some((a) => a.name.toLowerCase() === q) || selected.has(q);
+
+  const toggle = (name) => onChange(selected.has(name.toLowerCase())
+    ? value.filter((v) => v.toLowerCase() !== name.toLowerCase())
+    : [...value, name]);
+  const setCounty = (county, on) => {
+    const names = AREAS.filter((a) => a.county === county).map((a) => a.name);
+    const rest = value.filter((v) => !names.some((n) => n.toLowerCase() === v.toLowerCase()));
+    onChange(on ? [...rest, ...names] : rest);
+  };
+  const addCustom = () => {
+    const name = query.trim().replace(/\s+/g, ' ');
+    if (name.length < 2) return;
+    if (!selected.has(name.toLowerCase())) onChange([...value, name]);
+    setQuery('');
+  };
+
+  return (
+    <View>
+      {/* Selected */}
+      {value.length ? (
+        <View style={[st.wrap, { marginBottom: 12 }]}>
+          {value.map((name) => (
+            <TouchableOpacity key={name} onPress={() => toggle(name)} activeOpacity={0.85} style={[st.area, st.dayOn, st.selArea]}
+              accessibilityLabel={`Remove ${name}`}>
+              <Text style={[st.areaTxt, { color: '#fff' }]}>{name}</Text>
+              <Feather name="x" size={13} color="#fff" />
+            </TouchableOpacity>
+          ))}
+        </View>
+      ) : (
+        <Text style={[st.or, { marginTop: 0 }]}>No areas yet — tap the places you can travel to.</Text>
+      )}
+
+      {/* Search / add */}
+      <View style={st.search}>
+        <Feather name="search" size={16} color={COLORS.textFaint} />
+        <TextInput value={query} onChangeText={setQuery} placeholder="Search or add an area (e.g. Ruaka)"
+          placeholderTextColor={COLORS.textFaint} style={st.searchInput} returnKeyType="done"
+          onSubmitEditing={() => (matches.length === 1 ? (toggle(matches[0].name), setQuery('')) : !exact && addCustom())} />
+        {query ? <TouchableOpacity onPress={() => setQuery('')} hitSlop={8}><Feather name="x-circle" size={16} color={COLORS.textFaint} /></TouchableOpacity> : null}
+      </View>
+      {q && !exact ? (
+        <TouchableOpacity onPress={addCustom} style={st.addRow} activeOpacity={0.85}>
+          <Feather name="plus-circle" size={16} color={COLORS.primary} />
+          <Text style={st.locTxt}>Add "{query.trim()}"</Text>
+        </TouchableOpacity>
+      ) : null}
+
+      {/* By county */}
+      {AREA_COUNTIES.map((county) => {
+        const list = matches.filter((a) => a.county === county);
+        if (!list.length) return null;
+        const all = AREAS.filter((a) => a.county === county).every((a) => selected.has(a.name.toLowerCase()));
+        return (
+          <View key={county} style={{ marginTop: 14 }}>
+            <View style={st.countyRow}>
+              <Text style={st.county}>{county}</Text>
+              {!q ? (
+                <TouchableOpacity onPress={() => setCounty(county, !all)} hitSlop={8}>
+                  <Text style={st.countyAll}>{all ? 'Clear' : 'Select all'}</Text>
+                </TouchableOpacity>
+              ) : null}
+            </View>
+            <View style={st.wrap}>
+              {list.map((a) => {
+                const on = selected.has(a.name.toLowerCase());
+                return (
+                  <TouchableOpacity key={a.name} activeOpacity={0.85} onPress={() => toggle(a.name)} style={[st.area, on && st.areaOn]}>
+                    {on ? <Feather name="check" size={13} color={COLORS.primary} /> : null}
+                    <Text style={[st.areaTxt, on && { color: COLORS.primary }]}>{a.name}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
 const st = StyleSheet.create({
   day:     { width: 58, paddingVertical: 10, borderRadius: RADIUS.md, borderWidth: 1, borderColor: COLORS.border, backgroundColor: '#fff', alignItems: 'center' },
   dayOn:   { backgroundColor: COLORS.primary, borderColor: COLORS.primary },
@@ -145,6 +237,14 @@ const st = StyleSheet.create({
   err:     { color: COLORS.danger, fontSize: 12, marginTop: 6 },
   or:      { fontSize: 12, fontWeight: '600', color: COLORS.textMuted, marginTop: 14, marginBottom: 8 },
   wrap:    { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  area:    { paddingHorizontal: 13, paddingVertical: 8, borderRadius: RADIUS.pill, borderWidth: 1, borderColor: COLORS.border, backgroundColor: '#fff' },
+  area:    { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 13, paddingVertical: 8, borderRadius: RADIUS.pill, borderWidth: 1, borderColor: COLORS.border, backgroundColor: '#fff' },
+  areaOn:  { borderColor: COLORS.primary, backgroundColor: COLORS.primaryXLight },
+  selArea: { paddingRight: 10 },
+  search:  { flexDirection: 'row', alignItems: 'center', gap: 8, borderWidth: 1, borderColor: COLORS.border, borderRadius: RADIUS.md, paddingHorizontal: 12, backgroundColor: '#fff' },
+  searchInput: { flex: 1, paddingVertical: 11, fontSize: 14, color: COLORS.text },
+  addRow:  { flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 10 },
+  countyRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 },
+  county:  { fontSize: 12, fontWeight: '800', color: COLORS.textMuted, textTransform: 'uppercase', letterSpacing: 0.5 },
+  countyAll: { fontSize: 12, fontWeight: '700', color: COLORS.primary },
   areaTxt: { fontSize: 13, fontWeight: '600', color: COLORS.textBody },
 });

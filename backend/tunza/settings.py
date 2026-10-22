@@ -118,6 +118,14 @@ STORAGES = {
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
+# ── Cloudinary (private storage for caregiver verification documents) ───────
+# Format: cloudinary://<api_key>:<api_secret>@<cloud_name>  (Cloudinary dashboard → API Keys)
+# Leave empty locally to store documents in MEDIA_ROOT instead.
+CLOUDINARY_URL = config('CLOUDINARY_URL', default='')
+if CLOUDINARY_URL:
+    import os
+    os.environ.setdefault('CLOUDINARY_URL', CLOUDINARY_URL)
+
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # ── REST Framework ────────────────────────────────────────────────────────────

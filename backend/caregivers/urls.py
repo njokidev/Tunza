@@ -7,5 +7,6 @@ urlpatterns = [
     path('me/',             views.MyCaregiverProfileView.as_view(),  name='my_profile'),
     path('availability/',   views.AvailabilityView.as_view(),        name='availability'),
     path('availability/<int:pk>/', views.AvailabilityView.as_view(), name='availability_delete'),
+    path('verification/',   views.VerificationView.as_view(),        name='verification'),
     path('specializations/', views.SpecializationListView.as_view(), name='specializations'),
 ]

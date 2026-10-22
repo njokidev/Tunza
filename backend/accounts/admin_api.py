@@ -7,7 +7,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from django.db import transaction
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, F, Q, Sum
 from django.db.models.functions import TruncDate
 from django.urls import path
 from django.utils import timezone
@@ -21,6 +21,7 @@ from accounts.permissions import IsAdmin
 from bookings.models import Booking
 from bookings.serializers import BookingSerializer
 from caregivers.models import CaregiverProfile
+from caregivers import documents as doc_store
 from payments.models import Payout
 
 COMMISSION_RATE = Decimal('0.125')
@@ -141,12 +142,22 @@ class AdminCaregiverSerializer(serializers.ModelSerializer):
     certificate = serializers.FileField(read_only=True)
     bookings_total = serializers.IntegerField(read_only=True)
     bookings_completed = serializers.IntegerField(read_only=True)
+    documents = serializers.SerializerMethodField()
 
     class Meta:
         model = CaregiverProfile
         fields = ['id', 'user', 'bio', 'specializations', 'experience', 'years_exp', 'hourly_rate',
-                  'id_number', 'certificate', 'is_available', 'location_name', 'rating_avg', 'rating_count',
-                  'bookings_total', 'bookings_completed', 'created_at']
+                  'id_number', 'certificate', 'is_available', 'location_name', 'work_areas',
+                  'rating_avg', 'rating_count', 'bookings_total', 'bookings_completed',
+                  'verification_status', 'verification_submitted_at', 'verification_note', 'nurse_verified',
+                  'documents', 'created_at']
+
+    def get_documents(self, p):
+        # Signed links that expire after 15 minutes — reload the list for fresh ones.
+        request = self.context.get('request')
+        return [{'id': str(d.id), 'doc_type': d.doc_type, 'label': d.get_doc_type_display(),
+                 'original_name': d.original_name, 'uploaded_at': d.uploaded_at,
+                 'url': doc_store.document_url(d, request)} for d in p.documents.all()]
 
     def get_user(self, p):
         u = p.user
@@ -160,12 +171,14 @@ class CaregiverListView(generics.ListAPIView):
     pagination_class = AdminPagination
 
     def get_queryset(self):
-        qs = (CaregiverProfile.objects.select_related('user').prefetch_related('specializations')
+        qs = (CaregiverProfile.objects.select_related('user').prefetch_related('specializations', 'documents')
               .annotate(bookings_total=Count('bookings', distinct=True),
                         bookings_completed=Count('bookings', filter=Q(bookings__status='completed'), distinct=True)))
         st = self.request.query_params.get('status')
         if st == 'pending':
-            qs = qs.filter(user__is_verified=False, user__is_active=True).order_by('created_at')
+            # Submitted applications first (oldest first), then caregivers who haven't uploaded yet.
+            qs = qs.filter(user__is_verified=False, user__is_active=True).order_by(
+                F('verification_submitted_at').asc(nulls_last=True), 'created_at')
         elif st == 'verified':
             qs = qs.filter(user__is_verified=True, user__is_active=True).order_by('-rating_avg')
         elif st == 'suspended':
@@ -212,12 +225,16 @@ class UserListView(generics.ListAPIView):
 
 
 class UserActionView(APIView):
-    """PATCH {action: verify | unverify | suspend | reactivate, reason?}"""
+    """PATCH {action: verify | reject | unverify | verify_nurse | unverify_nurse | suspend | reactivate, reason?}"""
     permission_classes = [IsAdmin]
 
+    CAREGIVER_ONLY = {'verify', 'reject', 'unverify', 'verify_nurse', 'unverify_nurse'}
     MESSAGES = {
-        'verify': ('You are verified', 'Your Tunza profile is verified. Families can now find and book you.'),
+        'verify': ('You are verified', 'Your background check is complete. Families can now find and book you.'),
+        'reject': ('Application not approved', 'We could not approve your application. Please check the reason, then upload your documents again.'),
         'unverify': ('Verification removed', 'Your profile is hidden from families while we review it.'),
+        'verify_nurse': ('Nursing certificate verified', 'You can now take medication administration jobs. Add it to your specialties.'),
+        'unverify_nurse': ('Nursing verification removed', 'You can no longer take medication administration jobs.'),
         'suspend': ('Account suspended', 'Your Tunza account has been suspended.'),
         'reactivate': ('Account reactivated', 'Your Tunza account is active again.'),
     }
@@ -231,23 +248,46 @@ class UserActionView(APIView):
         reason = (request.data.get('reason') or '').strip()
         if action not in self.MESSAGES:
             return Response({'detail': 'Unknown action.'}, status=400)
-        if action in ('verify', 'unverify') and user.role != User.Role.CAREGIVER:
+        if action in self.CAREGIVER_ONLY and user.role != User.Role.CAREGIVER:
             return Response({'detail': 'Only caregivers are verified.'}, status=400)
         if user.role == User.Role.ADMIN or user.id == request.user.id:
             return Response({'detail': 'Admin accounts are managed in Django admin.'}, status=400)
+        if action == 'reject' and not reason:
+            return Response({'detail': 'Give the caregiver a reason so they know what to fix.'}, status=400)
 
-        if action == 'verify':
-            user.is_verified = True
-        elif action == 'unverify':
-            user.is_verified = False
-        elif action == 'suspend':
-            user.is_active = False
-        elif action == 'reactivate':
-            user.is_active = True
-        user.save(update_fields=['is_verified', 'is_active'])
+        VS = CaregiverProfile.VerificationStatus
+        profile = None
+        if action in self.CAREGIVER_ONLY:
+            profile, _ = CaregiverProfile.objects.get_or_create(user=user)
+
+        with transaction.atomic():
+            if action == 'verify':
+                user.is_verified = True
+                profile.verification_status, profile.verification_note = VS.APPROVED, ''
+            elif action == 'reject':
+                user.is_verified = False
+                profile.verification_status, profile.verification_note = VS.REJECTED, reason
+            elif action == 'unverify':
+                user.is_verified = False
+                profile.verification_status = VS.PENDING
+            elif action == 'verify_nurse':
+                profile.nurse_verified = True
+            elif action == 'unverify_nurse':
+                profile.nurse_verified = False
+                med = profile.specializations.filter(name__iexact='Medication Administration')
+                profile.specializations.remove(*med)
+            elif action == 'suspend':
+                user.is_active = False
+            elif action == 'reactivate':
+                user.is_active = True
+            user.save(update_fields=['is_verified', 'is_active'])
+            if profile is not None:
+                profile.save(update_fields=['verification_status', 'verification_note', 'nurse_verified'])
 
         title, body = self.MESSAGES[action]
-        Notification.objects.create(user=user, title=title, body=f'{body} {reason}'.strip(), type='system')
+        if reason:
+            body = f'{body} Reason: {reason}'
+        Notification.objects.create(user=user, title=title, body=body, type='system')
         return Response(AdminUserSerializer(users_with_counts().get(id=user.id)).data)
 
 

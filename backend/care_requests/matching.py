@@ -1,4 +1,4 @@
-from caregivers.models import CaregiverProfile
+from caregivers.models import CaregiverProfile, requires_nurse
 from .models import CareRequest, CareMatch
 import math
 
@@ -39,8 +39,11 @@ def score_caregiver(caregiver, cr):
         score += 25
         reasons.append("Available on your requested days")
 
-    # location (15%)
-    if caregiver.latitude and caregiver.longitude and cr.latitude and cr.longitude:
+    # location (15%) — the caregiver said they work in this area, or failing that, distance
+    areas = {a.strip().lower() for a in (caregiver.work_areas or [])}
+    if cr.location_name and cr.location_name.strip().lower() in areas:
+        score += 15; reasons.append(f"Works in {cr.location_name}")
+    elif caregiver.latitude and caregiver.longitude and cr.latitude and cr.longitude:
         d = _km(caregiver.latitude, caregiver.longitude, cr.latitude, cr.longitude)
         if d <= 5:   score += 15; reasons.append(f"{d:.1f} km from care location")
         elif d <= 15: score += 10; reasons.append(f"{d:.1f} km from care location")
@@ -52,7 +55,8 @@ def score_caregiver(caregiver, cr):
     else:                          score += 2
 
     # verification (10%)
-    if caregiver.user.is_verified: score += 7; reasons.append("Identity verified")
+    if caregiver.user.is_verified: score += 7; reasons.append("Background checked")
+    if caregiver.nurse_verified:   reasons.append("Verified nurse")
     if caregiver.certificate:      score += 3; reasons.append("Certificate on file")
 
     # rating (5%)
@@ -75,6 +79,9 @@ def run_matching(care_request):
     caregivers = CaregiverProfile.objects.filter(
         user__is_verified=True, is_available=True
     ).prefetch_related("specializations","availability")
+    if requires_nurse(care_request.care_types):
+        # Medication administration: verified nurses only, never ranked in lower down.
+        caregivers = caregivers.filter(nurse_verified=True)
 
     results = []
     for cg in caregivers:

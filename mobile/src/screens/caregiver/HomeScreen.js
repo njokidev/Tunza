@@ -69,7 +69,8 @@ export default function CaregiverHomeScreen({ navigation }) {
     const monthNet = bookings
       .filter((b) => b.status === 'completed' && new Date(b.end_date).getMonth() === now.getMonth() && new Date(b.end_date).getFullYear() === now.getFullYear())
       .reduce((sum, b) => sum + caregiverNet(b.total_amount), 0);
-    const nearby = withDistance(data?.open ?? [], data?.profile).filter(({ r }) => !applied.has(r.id)).slice(0, 2);
+    const nearby = withDistance(data?.open ?? [], data?.profile)
+      .filter(({ r }) => r.job_state === 'open' && r.can_apply !== false && !r.has_applied && !applied.has(r.id)).slice(0, 2);
     return { pending, ongoing, today, nextUp, monthNet, nearby };
   }, [data, applied]);
 
@@ -86,12 +87,13 @@ export default function CaregiverHomeScreen({ navigation }) {
   const missing = [
     !p.bio && 'a short bio',
     !p.specializations?.length && 'your specialties',
-    !p.location_name && 'your area',
+    !(p.work_areas?.length || p.location_name) && 'the areas you work in',
     !p.availability?.length && 'weekly availability',
     !Number(p.hourly_rate) && 'your hourly rate',
   ].filter(Boolean);
+  const vStatus = user?.is_verified ? 'approved' : (p.verification_status || 'not_submitted');
   const steps = [
-    { done: user?.is_verified, label: 'ID verified by Tunza' },
+    { done: user?.is_verified, label: vStatus === 'pending' ? 'Background check in progress (2–3 days)' : 'Background check passed' },
     { done: missing.length === 0, label: 'Profile complete' },
     { done: p.is_available, label: 'Taking new clients' },
   ];
@@ -171,16 +173,26 @@ export default function CaregiverHomeScreen({ navigation }) {
               </View>
             ))}
           </View>
-          {!user?.is_verified ? (
+          {vStatus === 'not_submitted' || vStatus === 'rejected' ? (
             <Text style={[TYPE.caption, { marginTop: 10 }]}>
-              Families can't find you until Tunza verifies your ID. Add your national ID number on your profile.
+              {vStatus === 'rejected'
+                ? 'Your last application needs changes. Open it to see why and upload again.'
+                : "Families can't find you until Tunza runs your background check. Upload your ID and Certificate of Good Conduct to start."}
             </Text>
           ) : null}
           {missing.length ? (
             <Text style={[TYPE.caption, { marginTop: 6 }]}>Add {missing.join(', ')} — specialty and availability make up 55% of the match score.</Text>
           ) : null}
-          <Button title="Complete my profile" size="sm" iconName="user-check" style={{ marginTop: 14, alignSelf: 'flex-start' }}
-            onPress={() => navigation.navigate('Profile')} />
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 14 }}>
+            {vStatus === 'not_submitted' || vStatus === 'rejected' ? (
+              <Button title={vStatus === 'rejected' ? 'Fix my application' : 'Upload documents'} size="sm" iconName="upload-cloud"
+                onPress={() => navigation.navigate('Verification')} />
+            ) : null}
+            {missing.length ? (
+              <Button title="Complete my profile" size="sm" iconName="user-check" variant={vStatus === 'not_submitted' ? 'secondary' : 'primary'}
+                onPress={() => navigation.navigate('Profile')} />
+            ) : null}
+          </View>
         </Card>
       ) : null}
 
@@ -255,8 +267,8 @@ export default function CaregiverHomeScreen({ navigation }) {
         <SectionLabel label="Open requests near you" action="See all" onAction={() => navigation.navigate('Requests')} />
         {v.nearby.length === 0 ? (
           <Card><Text style={TYPE.body}>No new open requests right now. Families post new ones every day.</Text></Card>
-        ) : v.nearby.map(({ r, d }) => (
-          <JobCard key={r.id} request={r} distance={d} applied={applied.has(r.id)}
+        ) : v.nearby.map(({ r, d, inArea }) => (
+          <JobCard key={r.id} request={r} distance={d} inArea={inArea} applied={r.has_applied || applied.has(r.id)}
             onApply={(req) => navigation.navigate('ApplyToRequest', { request: req, defaultRate: p.hourly_rate })} />
         ))}
       </View>

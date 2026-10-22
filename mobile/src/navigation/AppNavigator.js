@@ -38,6 +38,7 @@ import CaregiverProfileScreen  from '../screens/caregiver/ProfileScreen';
 import EarningsScreen          from '../screens/caregiver/EarningsScreen';
 import OpenRequestsScreen      from '../screens/caregiver/OpenRequestsScreen';
 import ApplyToRequestScreen    from '../screens/caregiver/ApplyToRequestScreen';
+import VerificationScreen      from '../screens/caregiver/VerificationScreen';
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
 import AdminDashboardScreen from '../screens/admin/DashboardScreen';
@@ -159,6 +160,7 @@ function RootNavigator() {
         <>
           <Stack.Screen name="CaregiverTabs"  component={CaregiverTabs} />
           <Stack.Screen name="ApplyToRequest" component={ApplyToRequestScreen} />
+          <Stack.Screen name="Verification"   component={VerificationScreen} />
           <Stack.Screen name="Earnings"       component={EarningsScreen} />
           <Stack.Screen name="AccountDetails" component={AccountScreen} />
           <Stack.Screen name="Chat"           component={ChatScreen} options={headerStyle} />

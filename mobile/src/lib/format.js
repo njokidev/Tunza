@@ -1,4 +1,4 @@
-import { CARE_RECIPIENTS, BOOKING_CARE_TYPES, COMMISSION_RATE } from './constants';
+import { AREAS, CARE_RECIPIENTS, BOOKING_CARE_TYPES, COMMISSION_RATE } from './constants';
 
 /** DRF list endpoints are paginated ({results}); a few return plain arrays. */
 export const unwrap = (data) => (Array.isArray(data) ? data : data?.results ?? []);
@@ -104,8 +104,30 @@ export function kmBetween(lat1, lon1, lat2, lon2) {
   return 6371 * 2 * Math.asin(Math.sqrt(a));
 }
 
-/** Sort open requests nearest-first relative to a caregiver profile. */
-export const withDistance = (requests, profile) =>
-  requests
-    .map((r) => ({ r, d: kmBetween(profile?.latitude, profile?.longitude, r.latitude, r.longitude) }))
-    .sort((a, b) => (a.d ?? 1e9) - (b.d ?? 1e9));
+/** Coordinates for every area a caregiver works in (plus their home base). */
+export function workPoints(profile) {
+  const pts = (profile?.work_areas ?? [])
+    .map((name) => AREAS.find((a) => a.name.toLowerCase() === String(name).toLowerCase()))
+    .filter(Boolean)
+    .map((a) => ({ lat: a.lat, lng: a.lng }));
+  if (profile?.latitude != null && profile?.longitude != null) pts.push({ lat: profile.latitude, lng: profile.longitude });
+  return pts;
+}
+
+const isOpen = (r) => !r.job_state || r.job_state === 'open';
+
+/**
+ * Sort open requests for a caregiver: jobs still open first, nearest first
+ * (distance to the closest of their work areas). Taken / expired jobs go last.
+ * `inArea` is true when the job is in one of the caregiver's chosen areas.
+ */
+export const withDistance = (requests, profile) => {
+  const pts = workPoints(profile);
+  const areas = new Set((profile?.work_areas ?? []).map((a) => String(a).toLowerCase()));
+  return requests
+    .map((r) => {
+      const ds = pts.map((p) => kmBetween(p.lat, p.lng, r.latitude, r.longitude)).filter((d) => d !== null);
+      return { r, d: ds.length ? Math.min(...ds) : null, inArea: areas.has(String(r.location_name || '').toLowerCase()) };
+    })
+    .sort((a, b) => (isOpen(b.r) - isOpen(a.r)) || (b.inArea - a.inArea) || ((a.d ?? 1e9) - (b.d ?? 1e9)));
+};
