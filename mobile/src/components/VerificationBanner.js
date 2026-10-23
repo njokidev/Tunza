@@ -25,7 +25,7 @@ export default function VerificationBanner({ onPressProfile }) {
   const overdue = expected && expected < new Date();
   const steps = [
     { state: 'done', title: 'Documents received', sub: setup.verification_submitted_at ? fmtDate(setup.verification_submitted_at) : '' },
-    { state: 'active', title: 'Background check', sub: 'ID and Certificate of Good Conduct' },
+    { state: 'active', title: 'Background check', sub: 'ID, Good Conduct and CNA certificate' },
     { state: 'next', title: 'Families can book you', sub: 'As soon as you are approved' },
   ];
 

@@ -26,7 +26,7 @@ export default function VerificationBanner() {
   const overdue = expected && expected < new Date();
   const steps = [
     { icon: Check, state: 'done', title: 'Documents received', sub: setup.verification_submitted_at ? fmtDate(setup.verification_submitted_at) : '' },
-    { icon: Search, state: 'active', title: 'Background check', sub: 'ID and Certificate of Good Conduct' },
+    { icon: Search, state: 'active', title: 'Background check', sub: 'ID, Good Conduct and CNA certificate' },
     { icon: Briefcase, state: 'next', title: 'Families can book you', sub: 'As soon as you are approved' },
   ];
 

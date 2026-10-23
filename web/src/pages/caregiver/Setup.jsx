@@ -1,16 +1,16 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import {
-  ArrowRight, Check, CheckCircle2, Clock, FileText, Lock, LogOut, ShieldCheck, Upload, X,
+  ArrowRight, Check, CheckCircle2, Clock, FileText, Lock, LogOut, RefreshCw, ShieldCheck, Upload, X,
 } from 'lucide-react';
 import AuthShell from '../auth/AuthShell';
 import { Alert, Button, Field, PageLoader } from '../../components/ui';
 import { useAuth, homeFor } from '../../context/AuthContext';
 import { caregiverApi, unwrap } from '../../api/endpoints';
 import { errorMessage } from '../../api/client';
-import {
-  AREAS, AREA_COUNTIES, DAYS_LONG, LANGUAGES, MAX_OTHER_DOCS, VERIFICATION_DOCS, countyOf,
-} from '../../lib/constants';
+import { LANGUAGES, MAX_OTHER_DOCS, VERIFICATION_DOCS } from '../../lib/constants';
+import WorkAreasPicker, { baseOf } from '../../components/WorkAreasPicker';
+import WeekAvailability, { slotsFromWeek, weekFromSlots } from '../../components/WeekAvailability';
 import { fmtDay } from '../../lib/format';
 import { needsPhoneVerification } from '../auth/VerifyPhone';
 
@@ -115,19 +115,21 @@ function Documents({ setup }) {
   return (
     <form onSubmit={submit} className="space-y-5">
       <Heading eyebrow="Get verified" title="Upload your documents">
-        Upload a clear photo or scan of your national ID, your Certificate of Good Conduct, and any other relevant
-        certificates. Families only see background-checked caregivers.
+        Upload a clear photo or scan of your national ID, your Certificate of Good Conduct and your CNA
+        certificate. Other certificates are optional. Families only see background-checked caregivers.
       </Heading>
       {rejected && (
         <Alert>
           We couldn't approve your last application.{setup.verification_note ? ` Reason: ${setup.verification_note}.` : ''} Please fix this and upload your documents again.
         </Alert>
       )}
-      <Field label="National ID number" error={errors.id_number}>
+      <Field label="National ID number" error={errors.id_number}
+        hint={/^\d{7,8}$/.test(idNumber) ? 'Looks good.' : `Your ID number has 7 or 8 digits${idNumber ? ` (${idNumber.length} so far)` : ''}.`}>
         <input className="input" inputMode="numeric" placeholder="e.g. 12345678" value={idNumber}
           onChange={(e) => { setIdNumber(e.target.value.replace(/\D/g, '').slice(0, 8)); setErrors((x) => ({ ...x, id_number: '' })); }} />
       </Field>
       <div className="space-y-2">
+        <p className="text-xs text-gray-500">PDF or photo, up to {MAX_MB} MB each. Make sure the text is sharp and nothing is cut off.</p>
         {VERIFICATION_DOCS.map((d) => (
           <FileRow key={d.key} doc={d} file={files[d.key]} error={errors[d.key]}
             onPick={(l) => pick(d.key, l)} onRemove={() => setFiles((x) => { const n = { ...x }; delete n[d.key]; return n; })} />
@@ -138,7 +140,9 @@ function Documents({ setup }) {
         ))}
         {others.length < MAX_OTHER_DOCS && (
           <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-gray-300 px-4 py-3 text-sm font-semibold text-brand-700 hover:bg-brand-50">
-            <Upload className="h-4 w-4" /> Add another certificate (optional)
+            <Upload className="h-4 w-4 shrink-0" />
+            <span>Other relevant certificates <span className="font-normal text-gray-400">(optional)</span>
+              <span className="block text-xs font-normal text-gray-500">First aid, caregiving courses, references…</span></span>
             <input type="file" className="hidden" accept="image/jpeg,image/png,application/pdf"
               onChange={(e) => { pick('other', e.target.files); e.target.value = ''; }} />
           </label>
@@ -147,7 +151,8 @@ function Documents({ setup }) {
       <label className="flex items-start gap-3 text-sm text-gray-700">
         <input type="checkbox" className="mt-0.5 h-4 w-4 rounded accent-brand-700" checked={consent}
           onChange={(e) => { setConsent(e.target.checked); setErrors((x) => ({ ...x, consent: '' })); }} />
-        I agree that Tunza may check these documents and run a background check on me.
+        I confirm these documents are mine and I agree that Tunza may check them and run a background check. They are
+        stored privately and only Tunza's verification team can see them.
       </label>
       {errors.consent && <p className="-mt-3 text-xs font-medium text-red-600">{errors.consent}</p>}
       <Alert>{errors._}</Alert>
@@ -169,9 +174,18 @@ function FileRow({ doc, file, error, onPick, onRemove }) {
         <div className="truncate text-xs text-gray-500">{file ? file.name : error || doc.hint}</div>
       </div>
       {file ? (
-        <button type="button" onClick={onRemove} className="rounded-lg p-1.5 text-gray-400 hover:bg-white hover:text-red-600" aria-label={`Remove ${doc.title}`}>
-          <X className="h-4 w-4" />
-        </button>
+        <div className="flex gap-1">
+          {onPick && (
+            <label className="cursor-pointer rounded-lg p-1.5 text-brand-700 hover:bg-white" aria-label={`Replace ${doc.title}`} title="Replace">
+              <RefreshCw className="h-4 w-4" />
+              <input type="file" className="hidden" accept="image/jpeg,image/png,application/pdf"
+                onChange={(e) => { onPick(e.target.files); e.target.value = ''; }} />
+            </label>
+          )}
+          <button type="button" onClick={onRemove} className="rounded-lg p-1.5 text-gray-400 hover:bg-white hover:text-red-600" aria-label={`Remove ${doc.title}`}>
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       ) : (
         <label className="cursor-pointer rounded-lg bg-brand-50 px-3 py-1.5 text-sm font-semibold text-brand-700 hover:bg-brand-100">
           Choose
@@ -320,6 +334,7 @@ function Profile({ setup }) {
             <button key={v} type="button" className={chip(form.gender === v)} onClick={() => set({ gender: form.gender === v ? '' : v })}>{l}</button>
           ))}
         </div>
+        <p className="mt-2 text-xs text-gray-500">Some families ask for a caregiver of a particular gender or language.</p>
       </div>
       <Alert>{errors._}</Alert>
       <Button type="submit" size="lg" className="w-full" loading={busy}>Continue <ArrowRight className="h-4 w-4" /></Button>
@@ -331,18 +346,15 @@ function Profile({ setup }) {
 function Areas() {
   const { refreshUser } = useAuth();
   const [areas, setAreas] = useState([]);
-  const [open, setOpen] = useState(new Set(['Nairobi']));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const has = (n) => areas.some((a) => a.toLowerCase() === n.toLowerCase());
-  const toggle = (n) => { setAreas((a) => (has(n) ? a.filter((x) => x.toLowerCase() !== n.toLowerCase()) : [...a, n])); setError(''); };
-  const flip = (c) => setOpen((o) => { const n = new Set(o); n.has(c) ? n.delete(c) : n.add(c); return n; });
 
   const save = async () => {
     if (!areas.length) return setError('Choose at least one area you can travel to.');
     setBusy(true); setError('');
     try {
-      const base = areas.map((n) => AREAS.find((a) => a.name.toLowerCase() === n.toLowerCase())).find(Boolean);
+      // Home base for distance = the first chosen area we have coordinates for.
+      const base = baseOf(areas);
       await caregiverApi.updateMe({ work_areas: areas, location_name: areas[0], ...(base ? { latitude: base.lat, longitude: base.lng } : {}) });
       await refreshUser();   // -> availability
     } catch (e) { setError(errorMessage(e)); setBusy(false); }
@@ -353,30 +365,7 @@ function Areas() {
       <Heading eyebrow="Step 2 of 3" title="Where can you work?">
         Open a county and tap the areas you can get to easily. Families nearby will see you first.
       </Heading>
-      <div className="space-y-2">
-        {AREA_COUNTIES.map((c) => {
-          const list = AREAS.filter((a) => countyOf(a.name) === c);
-          if (!list.length) return null;
-          const picked = list.filter((a) => has(a.name)).length;
-          return (
-            <div key={c} className="rounded-xl border border-gray-200 bg-white">
-              <button type="button" onClick={() => flip(c)} className="flex w-full items-center justify-between px-4 py-3 text-left">
-                <span className="text-sm font-bold text-gray-900">{c}</span>
-                <span className="text-xs font-semibold text-gray-500">{picked ? `${picked} chosen` : `${list.length} areas`}</span>
-              </button>
-              {open.has(c) && (
-                <div className="flex flex-wrap gap-2 border-t border-gray-100 px-4 py-3">
-                  {list.map((a) => (
-                    <button key={a.name} type="button" className={chip(has(a.name))} onClick={() => toggle(a.name)}>
-                      {has(a.name) && <Check className="h-3.5 w-3.5" />}{a.name}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
+      <WorkAreasPicker value={areas} onChange={(v) => { setAreas(v); setError(''); }} />
       <p className="text-center text-xs text-gray-500">You can change these any time from your profile.</p>
       <Alert>{error}</Alert>
       <Button size="lg" className="w-full" loading={busy} onClick={save} variant={areas.length ? 'primary' : 'secondary'}>
@@ -387,27 +376,18 @@ function Areas() {
 }
 
 // ── 4. Weekly availability ───────────────────────────────────────────────────
-const PRESETS = [
-  { label: 'Daytime', start: '08:00', end: '17:00' },
-  { label: 'Morning', start: '06:00', end: '12:00' },
-  { label: 'Afternoon', start: '12:00', end: '18:00' },
-  { label: 'Overnight', start: '19:00', end: '23:59' },
-];
-
 function Availability() {
   const { refreshUser } = useAuth();
-  const [days, setDays] = useState([]);
-  const [hours, setHours] = useState({ start: '08:00', end: '17:00' });
+  const [week, setWeek] = useState(() => weekFromSlots([]));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
-  const toggleDay = useCallback((i) => { setDays((d) => (d.includes(i) ? d.filter((x) => x !== i) : [...d, i].sort())); setError(''); }, []);
+  const chosen = week.filter((d) => d.on).length;
 
   const save = async () => {
-    if (!days.length) return setError('Choose at least one day you can work.');
-    if (hours.end <= hours.start) return setError('End time must be after start time.');
+    if (!chosen) return setError('Choose at least one day you can work.');
     setBusy(true); setError('');
     try {
-      await caregiverApi.saveAvailability(days.map((day) => ({ day, start_time: hours.start, end_time: hours.end })));
+      await caregiverApi.saveAvailability(slotsFromWeek(week));
       await refreshUser();   // setup done -> dashboard
     } catch (e) { setError(errorMessage(e)); setBusy(false); }
   };
@@ -415,40 +395,12 @@ function Availability() {
   return (
     <div className="space-y-5">
       <Heading eyebrow="Step 3 of 3" title="When can you work?">
-        Pick your days, then your usual hours. Families are matched to the times you choose. You can set different hours per day later in your profile.
+        Pick your days, then your usual hours. Families are matched to the times you choose.
       </Heading>
-      <div>
-        <div className="mb-2 flex items-center justify-between text-sm font-semibold text-gray-800">
-          Days
-          <span className="flex gap-3 text-xs">
-            <button type="button" className="text-brand-700 hover:underline" onClick={() => setDays([0, 1, 2, 3, 4])}>Weekdays</button>
-            <button type="button" className="text-brand-700 hover:underline" onClick={() => setDays([0, 1, 2, 3, 4, 5, 6])}>Every day</button>
-          </span>
-        </div>
-        <div className="grid grid-cols-7 gap-1.5">
-          {DAYS_LONG.map((d, i) => (
-            <button key={d} type="button" onClick={() => toggleDay(i)}
-              className={`rounded-xl border-2 py-2.5 text-sm font-bold ${days.includes(i) ? 'border-brand-700 bg-brand-700 text-white' : 'border-gray-200 bg-white text-gray-700'}`}>
-              {d.slice(0, 3)}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div>
-        <div className="mb-2 text-sm font-semibold text-gray-800">Hours</div>
-        <div className="flex flex-wrap gap-2">
-          {PRESETS.map((p) => (
-            <button key={p.label} type="button" className={chip(hours.start === p.start && hours.end === p.end)}
-              onClick={() => setHours({ start: p.start, end: p.end })}>{p.label} · {p.start}–{p.end}</button>
-          ))}
-        </div>
-        <div className="mt-3 grid grid-cols-2 gap-3">
-          <Field label="From"><input type="time" className="input" value={hours.start} onChange={(e) => setHours((h) => ({ ...h, start: e.target.value }))} /></Field>
-          <Field label="To"><input type="time" className="input" value={hours.end} onChange={(e) => setHours((h) => ({ ...h, end: e.target.value }))} /></Field>
-        </div>
-      </div>
+      <WeekAvailability week={week} onChange={(w) => { setWeek(w); setError(''); }} />
+      <p className="text-center text-xs text-gray-500">You can change this any time from your profile.</p>
       <Alert>{error}</Alert>
-      <Button size="lg" className="w-full" loading={busy} onClick={save} variant={days.length ? 'primary' : 'secondary'}>
+      <Button size="lg" className="w-full" loading={busy} onClick={save} variant={chosen ? 'primary' : 'secondary'}>
         <Check className="h-4 w-4" /> Finish setup
       </Button>
     </div>

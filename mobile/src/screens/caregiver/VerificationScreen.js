@@ -170,7 +170,7 @@ export default function VerificationScreen({ navigation, route }) {
         <ScreenHeader title={onboarding ? 'Upload your documents' : 'Get verified'} onBack={goBack}
           eyebrow={onboarding ? 'GET VERIFIED' : undefined}
           subtitle={onboarding
-            ? 'Upload a clear photo or scan of your national ID, your Certificate of Good Conduct, and any other relevant certificates. Families only see background-checked caregivers.'
+            ? 'Upload a clear photo or scan of your national ID, your Certificate of Good Conduct and your CNA certificate. Other certificates are optional. Families only see background-checked caregivers.'
             : 'Families only see background-checked caregivers. Upload your documents once — we review them within 2–3 days.'} />
 
         <View style={{ paddingHorizontal: 20, gap: 12 }}>
@@ -271,7 +271,7 @@ function Submitted({ info, justSubmitted, onDone, onboarding }) {
   const insets = useSafeAreaInsets();
   const steps = [
     { icon: 'check', done: true, title: 'Documents received', sub: info.verification_submitted_at ? `Submitted ${fmtDate(info.verification_submitted_at)}` : '' },
-    { icon: 'search', title: 'Background check', sub: 'We verify your ID and Certificate of Good Conduct.' },
+    { icon: 'search', title: 'Background check', sub: 'We verify your ID, Certificate of Good Conduct and CNA certificate.' },
     { icon: 'bell', title: "We'll get back to you in 2–3 days", sub: "You'll get a notification once you're approved." },
   ];
   return (

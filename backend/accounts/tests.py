@@ -11,7 +11,7 @@ from rest_framework.test import APITestCase
 
 from accounts.models import User
 from bookings.models import Booking
-from caregivers.models import CaregiverProfile
+from caregivers.models import CaregiverDocument, CaregiverProfile
 from payments.models import Payout
 
 
@@ -61,7 +61,11 @@ class AdminApiTests(APITestCase):
     def test_verification_queue_and_actions(self):
         r = self.client.get('/api/admin/caregivers/?status=pending')
         self.assertEqual([c['user']['email'] for c in r.data['results']], ['newbie@t.ke'])
-        r = self.client.patch(f'/api/admin/users/{self.newbie.id}/', {'action': 'verify'}, format='json')
+        url = f'/api/admin/users/{self.newbie.id}/'
+        r = self.client.patch(url, {'action': 'verify'}, format='json')
+        self.assertEqual((r.status_code, r.data['code']), (400, 'cna_required'))   # no CNA certificate yet
+        CaregiverDocument.objects.create(caregiver=self.newbie.caregiver_profile, doc_type='cna')
+        r = self.client.patch(url, {'action': 'verify'}, format='json')
         self.assertEqual(r.status_code, 200)
         self.assertTrue(r.data['is_verified'])
         r = self.client.patch(f'/api/admin/users/{self.family.id}/', {'action': 'verify'}, format='json')

@@ -9,6 +9,10 @@
 
 databases:
   - name: tunza-db
+    # FREE PLAN: no backups and Render deletes it after 30 days. Before real
+    # families sign up, change this to a paid plan (e.g. basic-256mb), which
+    # adds daily backups with point-in-time recovery. Until then the nightly
+    # "Database backup" GitHub workflow keeps encrypted dumps.
     plan: free
     region: frankfurt
     databaseName: tunza
@@ -39,7 +43,7 @@ services:
       - key: ALLOWED_HOSTS
         value: .onrender.com
       - key: CORS_ALLOWED_ORIGINS
-        value: https://tunza-web.onrender.com,http://localhost:5173
+        value: https://tunza-web.onrender.com   # production only allows https origins
       - key: WEB_CONCURRENCY
         value: "2"
       # First admin account — Render asks you for these when you apply the
@@ -59,6 +63,8 @@ services:
         sync: false
       - key: MPESA_PASSKEY
         sync: false
+      - key: MPESA_CALLBACK_URL
+        value: https://tunza-api.onrender.com/api/payments/callback/
       # Private storage for caregiver ID / good conduct uploads (required:
       # Render's disk is wiped on every deploy). Cloudinary → API Keys.
       - key: CLOUDINARY_URL

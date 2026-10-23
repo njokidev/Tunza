@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Check, Plus, Save, Trash2 } from 'lucide-react';
+import { Check, Save } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { authApi, caregiverApi, unwrap } from '../../api/endpoints';
 import { errorMessage } from '../../api/client';
 import { useAsync } from '../../lib/useAsync';
-import { AREAS, DAYS_LONG, EXPERIENCE_LEVELS, LANGUAGES } from '../../lib/constants';
-import { fmtShortTime, kes } from '../../lib/format';
+import { EXPERIENCE_LEVELS, LANGUAGES } from '../../lib/constants';
+import { kes } from '../../lib/format';
 import { Alert, Avatar, Button, Card, Field, PageHeader, PageLoader, VerifiedBadge } from '../../components/ui';
-import AreaPicker from '../../components/AreaPicker';
+import WorkAreasPicker, { baseOf } from '../../components/WorkAreasPicker';
+import WeekAvailability, { slotsFromWeek, weekFromSlots } from '../../components/WeekAvailability';
 
 const levelFor = (years) => (years >= 5 ? 'senior' : years >= 2 ? 'mid' : 'junior');
 
@@ -25,6 +26,8 @@ export default function ProfileEditor() {
   }, []);
 
   const [form, setForm] = useState(null);
+  const [week, setWeek] = useState(null);
+  const [savedWeek, setSavedWeek] = useState('');
   const [account, setAccount] = useState({ full_name: user.full_name, phone: user.phone ?? '' });
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState({ kind: '', text: '' });
@@ -49,6 +52,9 @@ export default function ProfileEditor() {
       night_shift_rate: p.night_shift_rate ? Math.round(Number(p.night_shift_rate)) : '',
       payout_phone: p.payout_phone ?? '',
     });
+    const w = weekFromSlots(data.availability);
+    setWeek(w);
+    setSavedWeek(JSON.stringify(w));
   }, [data]);
 
   if (loading || (!form && !error)) return <PageLoader />;
@@ -66,7 +72,10 @@ export default function ProfileEditor() {
     setSaving(true);
     setStatus({ kind: '', text: '' });
     try {
+      if (!form.work_areas.length) throw { response: { data: { detail: 'Choose at least one area you can work in.' } } };
       const years = Number(form.years_exp) || 0;
+      // Same as the mobile app: the first chosen area is the home base for distance.
+      const base = baseOf(form.work_areas);
       const payload = {
         ...form,
         years_exp: years,
@@ -74,9 +83,17 @@ export default function ProfileEditor() {
         hourly_rate: Number(form.hourly_rate) || 0,
         day_shift_rate: Number(form.day_shift_rate) || null,
         night_shift_rate: Number(form.night_shift_rate) || null,
+        location_name: form.work_areas[0] ?? '',
+        ...(base ? { latitude: base.lat, longitude: base.lng } : {}),
       };
       if (!payload.id_number) delete payload.id_number;
       await caregiverApi.updateMe(payload);
+      if (JSON.stringify(week) !== savedWeek) {
+        const { data: slots } = await caregiverApi.saveAvailability(slotsFromWeek(week));
+        const w = weekFromSlots(unwrap(slots));
+        setWeek(w);
+        setSavedWeek(JSON.stringify(w));
+      }
       if (account.full_name !== user.full_name || account.phone !== (user.phone ?? '')) {
         const { data: me } = await authApi.updateMe(account);
         setUser(me);
@@ -163,22 +180,10 @@ export default function ProfileEditor() {
               <input type="number" min={0} step={100} className="input" value={form.night_shift_rate} onChange={(e) => set({ night_shift_rate: e.target.value })} />
             </Field>
           </div>
-          <Field label="Area you work from" hint="Used to measure distance to families.">
-            <AreaPicker value={form} onChange={(loc) => set(loc)} />
-          </Field>
           <div>
-            <div className="mb-2 text-sm font-semibold text-gray-800">All areas you'll take jobs in</div>
-            <div className="flex flex-wrap gap-2">
-              {AREAS.map((a) => {
-                const on = form.work_areas.some((w) => w.toLowerCase() === a.name.toLowerCase());
-                return (
-                  <button key={a.name} type="button" className={`chip ${on ? 'chip-on' : 'chip-off'}`}
-                    onClick={() => set({ work_areas: on ? form.work_areas.filter((w) => w.toLowerCase() !== a.name.toLowerCase()) : [...form.work_areas, a.name] })}>
-                    {on && <Check className="h-3.5 w-3.5" />}{a.name}
-                  </button>
-                );
-              })}
-            </div>
+            <div className="mb-1 text-sm font-semibold text-gray-800">Where you can work</div>
+            <p className="mb-3 text-xs text-gray-500">Open a county and tap the areas you can get to easily. The first one is used to measure distance to families.</p>
+            <WorkAreasPicker value={form.work_areas} onChange={(work_areas) => set({ work_areas })} />
           </div>
           <div>
             <div className="mb-2 text-sm font-semibold text-gray-800">Languages you speak</div>
@@ -210,79 +215,16 @@ export default function ProfileEditor() {
           </label>
         </Card>
 
+        <Card className="p-6">
+          <h2 className="font-bold">Weekly availability</h2>
+          <p className="mb-4 text-sm text-gray-500">Families are matched to the days and hours you choose.</p>
+          {week && <WeekAvailability week={week} onChange={setWeek} />}
+        </Card>
+
         <div className="sticky bottom-20 z-10 flex justify-end md:bottom-4">
           <Button type="submit" size="lg" loading={saving} className="shadow-lg"><Save className="h-4 w-4" /> Save profile</Button>
         </div>
       </form>
-
-      <AvailabilityEditor initial={data.availability} />
     </div>
-  );
-}
-
-function AvailabilityEditor({ initial }) {
-  const [slots, setSlots] = useState(initial);
-  const [draft, setDraft] = useState({ day: 0, start_time: '08:00', end_time: '17:00' });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const takenDays = new Set(slots.map((s) => s.day));
-  const freeDays = DAYS_LONG.map((d, i) => ({ d, i })).filter(({ i }) => !takenDays.has(i));
-
-  useEffect(() => {
-    if (takenDays.has(Number(draft.day)) && freeDays.length) setDraft((x) => ({ ...x, day: freeDays[0].i }));
-  }, [slots]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const add = async () => {
-    setError('');
-    if (draft.end_time <= draft.start_time) return setError('End time must be after start time.');
-    setBusy(true);
-    try {
-      const { data } = await caregiverApi.addAvailability({ ...draft, day: Number(draft.day) });
-      setSlots((s) => [...s, data].sort((a, b) => a.day - b.day));
-    } catch (e) {
-      setError(errorMessage(e));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const remove = async (id) => {
-    setError('');
-    try {
-      await caregiverApi.removeAvailability(id);
-      setSlots((s) => s.filter((x) => x.id !== id));
-    } catch (e) {
-      setError(errorMessage(e));
-    }
-  };
-
-  return (
-    <Card className="mt-6 p-6">
-      <h2 className="font-bold">Weekly availability</h2>
-      <p className="text-sm text-gray-500">Availability is 25% of the match score. Changes save immediately.</p>
-      <ul className="mt-4 divide-y divide-gray-100">
-        {slots.length === 0 && <li className="py-3 text-sm text-gray-500">No days added yet.</li>}
-        {slots.map((s) => (
-          <li key={s.id} className="flex items-center justify-between py-3 text-sm">
-            <span className="w-28 font-semibold">{DAYS_LONG[s.day]}</span>
-            <span className="flex-1 text-gray-600">{fmtShortTime(s.start_time)} – {fmtShortTime(s.end_time)}</span>
-            <button onClick={() => remove(s.id)} className="rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-600" aria-label={`Remove ${DAYS_LONG[s.day]}`}>
-              <Trash2 className="h-4 w-4" />
-            </button>
-          </li>
-        ))}
-      </ul>
-      {freeDays.length > 0 && (
-        <div className="mt-4 grid gap-2 rounded-xl bg-gray-50 p-3 sm:grid-cols-[1fr_auto_auto_auto]">
-          <select className="input" value={draft.day} onChange={(e) => setDraft({ ...draft, day: e.target.value })}>
-            {freeDays.map(({ d, i }) => <option key={i} value={i}>{d}</option>)}
-          </select>
-          <input type="time" className="input" value={draft.start_time} onChange={(e) => setDraft({ ...draft, start_time: e.target.value })} />
-          <input type="time" className="input" value={draft.end_time} onChange={(e) => setDraft({ ...draft, end_time: e.target.value })} />
-          <Button onClick={add} loading={busy} variant="secondary"><Plus className="h-4 w-4" /> Add</Button>
-        </div>
-      )}
-      {error && <div className="mt-3"><Alert>{error}</Alert></div>}
-    </Card>
   );
 }

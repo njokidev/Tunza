@@ -112,8 +112,8 @@ export const VERIFICATION_DOCS = [
   { key: 'id_front',     title: 'National ID — front',          hint: 'A clear photo or scan. All four corners visible.', required: true,  icon: 'credit-card' },
   { key: 'id_back',      title: 'National ID — back',           hint: 'The side with the fingerprint.',                    required: true,  icon: 'credit-card' },
   { key: 'good_conduct', title: 'Certificate of Good Conduct',  hint: 'From eCitizen (DCI). PDF or photo.',                required: true,  icon: 'shield' },
-  { key: 'nursing',      title: 'Nursing certificate',          hint: 'Needed for medication administration jobs.',        required: false, icon: 'award' },
-  { key: 'cna',          title: 'Certified Nurse Assistant (CNA)', hint: 'Needed for medication administration jobs.',     required: false, icon: 'award' },
+  { key: 'cna',          title: 'Certified Nurse Assistant (CNA)', hint: 'Your caregiving certificate. Tunza checks it before approving you.', required: true, icon: 'award' },
+  { key: 'nursing',      title: 'Nursing certificate',          hint: 'If you have one. Needed for medication administration jobs.', required: false, icon: 'award' },
 ];
 export const MAX_OTHER_DOCS = 5;
 

@@ -203,6 +203,11 @@ class VerifyUserView(APIView):
             return Response({'detail': 'User not found.'}, status=status.HTTP_404_NOT_FOUND)
         if user.role != User.Role.CAREGIVER:
             return Response({'detail': 'Only caregivers are verified.'}, status=status.HTTP_400_BAD_REQUEST)
+        from caregivers.models import CaregiverDocument
+        if not CaregiverDocument.objects.filter(caregiver__user=user, doc_type='cna').exists():
+            return Response({'code': 'cna_required',
+                             'detail': 'A caregiver needs a CNA certificate on file before approval.'},
+                            status=status.HTTP_400_BAD_REQUEST)
         user.is_verified = True
         user.save(update_fields=['is_verified'])
         from caregivers.models import CaregiverProfile

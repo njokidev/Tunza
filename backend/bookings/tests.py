@@ -10,7 +10,7 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from accounts.models import User, Notification
-from caregivers.models import CaregiverProfile
+from caregivers.models import CaregiverDocument, CaregiverProfile
 from care_requests.models import CareRequest, CareMatch, CareApplication
 from bookings.models import Booking
 
@@ -189,7 +189,11 @@ class PermissionTests(APITestCase):
     def test_verify_only_caregivers(self):
         self.client.force_authenticate(self.admin)
         self.assertEqual(self.client.patch(f'/api/auth/users/{self.family.id}/verify/').status_code, 400)
-        self.assertEqual(self.client.patch(f'/api/auth/users/{self.newbie.id}/verify/').status_code, 200)
+        url = f'/api/auth/users/{self.newbie.id}/verify/'
+        self.assertEqual(self.client.patch(url).data['code'], 'cna_required')   # no CNA certificate yet
+        profile, _ = CaregiverProfile.objects.get_or_create(user=self.newbie)
+        CaregiverDocument.objects.create(caregiver=profile, doc_type='cna')
+        self.assertEqual(self.client.patch(url).status_code, 200)
         self.newbie.refresh_from_db()
         self.assertTrue(self.newbie.is_verified)
 

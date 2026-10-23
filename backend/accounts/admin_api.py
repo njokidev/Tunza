@@ -259,6 +259,10 @@ class UserActionView(APIView):
         profile = None
         if action in self.CAREGIVER_ONLY:
             profile, _ = CaregiverProfile.objects.get_or_create(user=user)
+            if action == 'verify' and not profile.documents.filter(doc_type='cna').exists():
+                return Response({'code': 'cna_required',
+                                 'detail': 'A caregiver needs a CNA certificate on file before approval. '
+                                           'Reject with a reason so they can upload it.'}, status=400)
 
         with transaction.atomic():
             if action == 'verify':
@@ -388,7 +392,8 @@ class PayoutListCreateView(generics.ListAPIView):
             return Response({'caregiver_id': 'Caregiver not found.'}, status=400)
 
         with transaction.atomic():
-            due = list(_due_queryset().select_for_update().filter(caregiver=cg))
+            # Lock only the bookings: "no payout yet" is an outer join Postgres can't lock.
+            due = list(_due_queryset().select_for_update(of=('self',)).filter(caregiver=cg))
             if not due:
                 return Response({'detail': 'Nothing is due to this caregiver.'}, status=400)
             gross = sum((b.total_amount for b in due), Decimal('0'))

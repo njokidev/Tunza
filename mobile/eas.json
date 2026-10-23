@@ -7,13 +7,22 @@
     "development": {
       "developmentClient": true,
       "distribution": "internal",
-      "android":{ "buildType": "apk" }
+      "android": { "buildType": "apk" }
     },
     "preview": {
-      "distribution": "internal"
+      "distribution": "internal",
+      "android": { "buildType": "apk" },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://tunza-api.onrender.com/api",
+        "EXPO_PUBLIC_MAPS_ENABLED": "false"
+      }
     },
     "production": {
-      "autoIncrement": true
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://tunza-api.onrender.com/api",
+        "EXPO_PUBLIC_MAPS_ENABLED": "false"
+      }
     }
   },
   "submit": {
