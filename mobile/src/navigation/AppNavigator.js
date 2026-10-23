@@ -49,6 +49,7 @@ import RateFamilyScreen        from '../screens/caregiver/RateFamilyScreen';
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
 import AdminDashboardScreen from '../screens/admin/DashboardScreen';
+import AdminVerificationScreen from '../screens/admin/VerificationScreen';
 
 const Stack = createStackNavigator();
 const Tab   = createBottomTabNavigator();
@@ -119,6 +120,7 @@ function AdminTabs() {
   return (
     <Tab.Navigator screenOptions={bar}>
       <Tab.Screen name="Dashboard" component={AdminDashboardScreen} options={{ tabBarIcon: tabIcon('bar-chart-2') }} />
+      <Tab.Screen name="Verify"    component={AdminVerificationScreen} options={{ tabBarIcon: tabIcon('shield') }} />
       <Tab.Screen name="Bookings"  component={BookingsScreen}       options={{ tabBarIcon: tabIcon('calendar') }} />
       <Tab.Screen name="Messages"  component={ConversationsScreen}  options={{ tabBarIcon: tabIcon('message-circle') }} />
       <Tab.Screen name="Account"   component={AccountScreen}        options={{ tabBarIcon: tabIcon('user') }} />

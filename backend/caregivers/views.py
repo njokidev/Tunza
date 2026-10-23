@@ -176,16 +176,17 @@ class VerificationView(APIView):
              id_front       scan/photo of the ID, front (required)
              id_back        scan/photo of the ID, back (required)
              good_conduct   Certificate of Good Conduct (required)
+             cna            Certified Nurse Assistant certificate (required: how Tunza
+                            checks a caregiver is trained)
              nursing        nursing certificate (optional)
-             cna            certified nurse assistant certificate (optional)
              other          any other relevant certificate (optional, repeatable)
            Moves the application to "pending" — Tunza reviews within 2–3 days.
     """
     permission_classes = [IsCaregiver, PhoneVerified]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
 
-    REQUIRED = ['id_front', 'id_back', 'good_conduct']
-    OPTIONAL = ['nursing', 'cna']
+    REQUIRED = ['id_front', 'id_back', 'good_conduct', 'cna']
+    OPTIONAL = ['nursing']
     MAX_OTHER = 5
 
     def get(self, request):

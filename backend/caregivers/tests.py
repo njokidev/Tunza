@@ -48,15 +48,16 @@ class VerificationTests(APITestCase):
 
     def submit(self, **extra):
         data = {'id_number': '12345678', 'id_front': pdf('front.pdf'), 'id_back': pdf('back.pdf'),
-                'good_conduct': pdf('gc.pdf')}
+                'good_conduct': pdf('gc.pdf'), 'cna': pdf('cna.pdf')}
         data.update(extra)
+        data = {k: v for k, v in data.items() if v is not None}   # None = leave that document out
         return self.client.post('/api/caregivers/verification/', data, format='multipart')
 
     def test_submit_moves_to_pending_and_notifies_admin(self):
         r = self.submit(nursing=pdf('nurse.pdf'))
         self.assertEqual(r.status_code, 201, r.data)
         self.assertEqual(r.data['verification_status'], 'pending')
-        self.assertEqual(len(r.data['documents']), 4)
+        self.assertEqual(len(r.data['documents']), 5)
         self.assertEqual(r.data['id_number_masked'], '•••••678')
         self.assertTrue(Notification.objects.filter(user=self.admin, title='New caregiver application').exists())
         # can't resubmit while pending
@@ -68,6 +69,15 @@ class VerificationTests(APITestCase):
         self.assertEqual(r.status_code, 400)
         self.assertIn('id_back', r.data)
         self.assertIn('good_conduct', r.data)
+        self.assertIn('cna', r.data)
+
+    def test_cna_required_nursing_optional(self):
+        r = self.submit(cna=None)
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(list(r.data), ['cna'])
+        r = self.submit()   # no nursing certificate: fine
+        self.assertEqual(r.status_code, 201, r.data)
+        self.assertNotIn('nursing', [d['doc_type'] for d in r.data['documents']])
 
     def test_id_number_rules(self):
         for bad in ['123456', '123456789', '12A45678', '']:
@@ -101,11 +111,11 @@ class VerificationTests(APITestCase):
         self.client.force_authenticate(self.carer)
         r = self.submit()
         self.assertEqual(r.status_code, 201)
-        self.assertEqual(p.documents.count(), 3)  # old documents replaced
+        self.assertEqual(p.documents.count(), 4)  # old documents replaced
 
         self.client.force_authenticate(self.admin)
         r = self.client.get('/api/admin/caregivers/?status=pending')
-        self.assertEqual(len(r.data['results'][0]['documents']), 3)
+        self.assertEqual(len(r.data['results'][0]['documents']), 4)
         self.assertTrue(r.data['results'][0]['documents'][0]['url'])
         self.client.patch(url, {'action': 'verify'})
         self.carer.refresh_from_db(); p.refresh_from_db()

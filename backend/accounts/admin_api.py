@@ -259,6 +259,10 @@ class UserActionView(APIView):
         profile = None
         if action in self.CAREGIVER_ONLY:
             profile, _ = CaregiverProfile.objects.get_or_create(user=user)
+            if action == 'verify' and not profile.documents.filter(doc_type='cna').exists():
+                return Response({'code': 'cna_required',
+                                 'detail': 'A caregiver needs a CNA certificate on file before approval. '
+                                           'Reject with a reason so they can upload it.'}, status=400)
 
         with transaction.atomic():
             if action == 'verify':

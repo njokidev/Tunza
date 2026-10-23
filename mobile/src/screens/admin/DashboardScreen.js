@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, FlatList, TouchableOpacity,
-  Alert, RefreshControl, ScrollView } from 'react-native';
+  RefreshControl } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import api, { authApi } from '../../api';
+import api from '../../api';
 import { Avatar, Badge, Button, COLORS, Empty, LoadingScreen } from '../../components/ui';
 import { COLORS as C, GRADIENT, RADIUS, SHADOWS, TYPE } from '../../theme';
 
@@ -30,15 +30,8 @@ export default function AdminDashboardScreen({ navigation }) {
 
   useEffect(() => { fetchAll(); }, []);
 
-  const verifyUser = (userId, name) => {
-    Alert.alert(`Verify ${name}?`, 'This caregiver will appear in patient search results.', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Verify ✅', onPress: async () => {
-        try { await authApi.verifyUser(userId); fetchAll(); }
-        catch { Alert.alert('Error', 'Could not verify user.'); }
-      }},
-    ]);
-  };
+  // Approving needs the documents and checks, so it happens on the Verify tab.
+  const verifyUser = () => navigation.navigate('Verify');
 
   // Totals come from the server so they count every record, not just the first page of the lists
   const stats = {
@@ -117,7 +110,7 @@ export default function AdminDashboardScreen({ navigation }) {
                 </View>
               </View>
               {item.role === 'caregiver' && !item.is_verified && (
-                <Button title="Verify" onPress={() => verifyUser(item.id, item.full_name)}
+                <Button title="Review" onPress={verifyUser}
                   style={{ paddingVertical: 8, paddingHorizontal: 12 }} />
               )}
             </View>

@@ -16,9 +16,11 @@ const TABS = [
 // What the admin confirms before a caregiver goes live (see the user flow doc).
 const CHECKS = [
   'The ID number matches the name, and I have seen the ID',
-  'The certificate or Good Conduct document is genuine and current',
+  'The CNA certificate and Good Conduct document are genuine and current',
   'I have spoken to the caregiver on the phone number shown',
 ];
+
+const hasCna = (c) => (c.documents ?? []).some((d) => d.doc_type === 'cna');
 
 const STATUS_BADGE = {
   not_submitted: { label: 'No documents yet', cls: 'bg-gray-100 text-gray-600 ring-gray-200' },
@@ -139,13 +141,14 @@ function CaregiverCard({ c, tab, onAction }) {
                 <FileText className="h-4 w-4 text-gray-400" />Open certificate
               </a>
             ) : <div className="mt-1.5 flex items-center gap-2 text-amber-700"><FileText className="h-4 w-4 text-gray-400" />No documents uploaded yet</div>}
+            {c.documents?.length && !hasCna(c) ? <p className="mt-2 rounded-lg bg-amber-50 p-2 text-xs font-semibold text-amber-800">No CNA certificate: send back so they can upload it.</p> : null}
             {c.documents?.length ? <p className="mt-2 text-xs text-gray-500">Links expire after 15 minutes. Refresh the page for new ones.</p> : null}
             {c.verification_status === 'rejected' && c.verification_note && (
               <p className="mt-2 rounded-lg bg-red-50 p-2 text-xs text-red-700">Sent back: {c.verification_note}</p>
             )}
           </div>
           <div className="flex flex-wrap gap-2">
-            {tab === 'pending' && <Button variant="success" size="sm" disabled={c.verification_status !== 'pending'} onClick={() => onAction('verify')}><ShieldCheck className="h-4 w-4" />Approve</Button>}
+            {tab === 'pending' && <Button variant="success" size="sm" disabled={c.verification_status !== 'pending' || !hasCna(c)} onClick={() => onAction('verify')}><ShieldCheck className="h-4 w-4" />Approve</Button>}
             {tab === 'pending' && c.verification_status === 'pending' && <Button variant="outline" size="sm" onClick={() => onAction('reject')}><ShieldX className="h-4 w-4" />Send back</Button>}
             {tab !== 'suspended' && (c.documents ?? []).some((d) => d.doc_type === 'nursing' || d.doc_type === 'cna') && (
               c.nurse_verified

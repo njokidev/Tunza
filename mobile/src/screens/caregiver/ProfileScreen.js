@@ -270,7 +270,7 @@ export default function CaregiverProfileScreen({ navigation }) {
 }
 
 const VERIFY_COPY = {
-  not_submitted: { icon: 'upload-cloud', title: 'Get verified to start getting jobs', sub: 'Upload your ID, Certificate of Good Conduct and any certificates. Takes about 5 minutes.', cta: 'Upload documents', tone: C.primary },
+  not_submitted: { icon: 'upload-cloud', title: 'Get verified to start getting jobs', sub: 'Upload your ID, Certificate of Good Conduct and CNA certificate. Takes about 5 minutes.', cta: 'Upload documents', tone: C.primary },
   pending:       { icon: 'clock',        title: 'Background check in progress',      sub: "Thank you for applying. We'll get back to you within 2–3 days.", cta: 'View application', tone: C.warning },
   rejected:      { icon: 'alert-circle', title: 'Your application needs changes',     sub: 'See what to fix and upload your documents again.', cta: 'Fix and resubmit', tone: C.danger },
 };

@@ -115,13 +115,28 @@ const COUNTY_OF = {
 };
 export const countyOf = (name) => COUNTY_OF[name] || 'Nairobi';
 
+// Shift presets and day shortcuts for weekly availability (same as the mobile app).
+export const SHIFT_PRESETS = [
+  { key: 'day',       label: 'Daytime',   sub: '8am – 5pm',  start: '08:00', end: '17:00' },
+  { key: 'morning',   label: 'Morning',   sub: '6am – 12pm', start: '06:00', end: '12:00' },
+  { key: 'afternoon', label: 'Afternoon', sub: '12pm – 6pm', start: '12:00', end: '18:00' },
+  { key: 'evening',   label: 'Evening',   sub: '4pm – 10pm', start: '16:00', end: '22:00' },
+  { key: 'full',      label: 'Full day',  sub: '6am – 10pm', start: '06:00', end: '22:00' },
+  { key: 'overnight', label: 'Overnight', sub: '8pm – 6am',  start: '20:00', end: '06:00' },
+];
+export const DAY_GROUPS = [
+  { label: 'Weekdays',  days: [0, 1, 2, 3, 4] },
+  { label: 'Weekends',  days: [5, 6] },
+  { label: 'Every day', days: [0, 1, 2, 3, 4, 5, 6] },
+];
+
 // Caregiver verification documents (same list as the mobile app).
 export const VERIFICATION_DOCS = [
   { key: 'id_front', title: 'National ID — front', hint: 'A clear photo or scan. All four corners visible.', required: true },
   { key: 'id_back', title: 'National ID — back', hint: 'The side with the fingerprint.', required: true },
   { key: 'good_conduct', title: 'Certificate of Good Conduct', hint: 'From eCitizen (DCI). PDF or photo.', required: true },
-  { key: 'nursing', title: 'Nursing certificate', hint: 'Needed for medication administration jobs.', required: false },
-  { key: 'cna', title: 'Certified Nurse Assistant (CNA)', hint: 'Needed for medication administration jobs.', required: false },
+  { key: 'cna', title: 'Certified Nurse Assistant (CNA)', hint: 'Your caregiving certificate. Tunza checks it before approving you.', required: true },
+  { key: 'nursing', title: 'Nursing certificate', hint: 'If you have one. Needed for medication administration jobs.', required: false },
 ];
 export const MAX_OTHER_DOCS = 5;
 

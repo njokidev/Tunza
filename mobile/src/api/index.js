@@ -121,6 +121,15 @@ export const authApi = {
   deleteRecipient: (id)       => api.delete(`/auth/recipients/${id}/`),
 };
 
+// ── Admin (/api/admin/, same endpoints as the web admin) ─────────────────────
+export const adminApi = {
+  overview:   (days = 30) => api.get('/admin/overview/', { params: { days } }),
+  // status: pending | verified | suspended. Paginated: { count, next, results }.
+  caregivers: (params)    => api.get('/admin/caregivers/', { params }),
+  // action: verify | reject | unverify | verify_nurse | unverify_nurse | suspend | reactivate
+  userAction: (userId, action, reason = '') => api.patch(`/admin/users/${userId}/`, { action, reason }),
+};
+
 // ── Caregivers ────────────────────────────────────────────────────────────────
 export const caregiverApi = {
   list:             (params) => api.get('/caregivers/', { params }),

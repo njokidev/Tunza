@@ -181,7 +181,7 @@ export default function CaregiverHomeScreen({ navigation }) {
             <Text style={[TYPE.caption, { marginTop: 10 }]}>
               {vStatus === 'rejected'
                 ? 'Your last application needs changes. Open it to see why and upload again.'
-                : "Families can't find you until Tunza runs your background check. Upload your ID and Certificate of Good Conduct to start."}
+                : "Families can't find you until Tunza runs your background check. Upload your ID, Certificate of Good Conduct and CNA certificate to start."}
             </Text>
           ) : null}
           {missing.length ? (
