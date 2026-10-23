@@ -203,11 +203,18 @@ if not DEBUG:
     # Refuse to start with settings that are only safe on a laptop.
     if SECRET_KEY == DEV_SECRET_KEY or len(SECRET_KEY) < 32:
         raise ImproperlyConfigured('Set a real SECRET_KEY (32+ random characters) when DEBUG is off.')
-    if not ALLOWED_HOSTS or '*' in ALLOWED_HOSTS:
-        raise ImproperlyConfigured('Set ALLOWED_HOSTS to the API\'s own hostnames (no "*") when DEBUG is off.')
+    # Hosts and CORS fix themselves with a warning instead of failing the deploy:
+    # a stale dashboard value (e.g. http://localhost:5173) shouldn't take the API down.
+    import warnings
+    if '*' in ALLOWED_HOSTS:
+        warnings.warn('ALLOWED_HOSTS contains "*"; ignoring it in production.')
+        ALLOWED_HOSTS = [h for h in ALLOWED_HOSTS if h != '*']
+    if not ALLOWED_HOSTS:
+        raise ImproperlyConfigured('Set ALLOWED_HOSTS to the API\'s own hostnames when DEBUG is off.')
     _insecure = [o for o in CORS_ALLOWED_ORIGINS if not o.startswith('https://')]
     if _insecure:
-        raise ImproperlyConfigured(f'CORS_ALLOWED_ORIGINS must be https:// in production; remove {", ".join(_insecure)}.')
+        warnings.warn(f'Ignoring non-https CORS origins in production: {", ".join(_insecure)}')
+        CORS_ALLOWED_ORIGINS = [o for o in CORS_ALLOWED_ORIGINS if o.startswith('https://')]
 
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     SECURE_SSL_REDIRECT = True
