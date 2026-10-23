@@ -4,9 +4,20 @@ from decouple import config
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-SECRET_KEY = config('SECRET_KEY', default='dev-secret-key-change-me')
+from django.core.exceptions import ImproperlyConfigured
+
+DEV_SECRET_KEY = 'dev-secret-key-change-me'
+SECRET_KEY = config('SECRET_KEY', default=DEV_SECRET_KEY)
 DEBUG = config('DEBUG', default=True, cast=bool)
-ALLOWED_HOSTS = config('ALLOWED_HOSTS', default='*').split(',')
+
+
+def _csv(value):
+    """'a, b,,c' -> ['a', 'b', 'c']"""
+    return [v.strip() for v in value.split(',') if v.strip()]
+
+
+# Any host is fine on your own machine; production must list its hosts.
+ALLOWED_HOSTS = _csv(config('ALLOWED_HOSTS', default='*' if DEBUG else ''))
 
 # Render sets this automatically for every web service
 RENDER_EXTERNAL_HOSTNAME = config('RENDER_EXTERNAL_HOSTNAME', default='')
@@ -75,8 +86,12 @@ DB_ENGINE = config('DB_ENGINE', default='django.db.backends.sqlite3')
 
 if DATABASE_URL:
     import dj_database_url
-    DATABASES = {'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600)}
+    # Reuse connections for 10 min, but check one is still alive before using it
+    # (managed Postgres drops idle connections during maintenance).
+    DATABASES = {'default': dj_database_url.parse(DATABASE_URL, conn_max_age=600, conn_health_checks=True)}
 elif DB_ENGINE == 'django.db.backends.sqlite3':
+    if not DEBUG:
+        raise ImproperlyConfigured('Production needs Postgres: set DATABASE_URL when DEBUG is off.')
     DATABASES = {
         'default': {
             'ENGINE': DB_ENGINE,
@@ -174,23 +189,37 @@ SIMPLE_JWT = {
 }
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
-CORS_ALLOWED_ORIGINS = config(
+CORS_ALLOWED_ORIGINS = _csv(config(
     'CORS_ALLOWED_ORIGINS',
-    default='http://localhost:8081,http://localhost:19006'
-).split(',')
+    default='http://localhost:8081,http://localhost:19006,http://localhost:5173' if DEBUG else ''
+))
 CORS_ALLOW_CREDENTIALS = True
-CSRF_TRUSTED_ORIGINS = [o for o in config('CSRF_TRUSTED_ORIGINS', default='').split(',') if o]
+CSRF_TRUSTED_ORIGINS = _csv(config('CSRF_TRUSTED_ORIGINS', default=''))
 if RENDER_EXTERNAL_HOSTNAME:
     CSRF_TRUSTED_ORIGINS.append(f'https://{RENDER_EXTERNAL_HOSTNAME}')
 
 # ── Production security (only when DEBUG is off) ─────────────────────────────
 if not DEBUG:
+    # Refuse to start with settings that are only safe on a laptop.
+    if SECRET_KEY == DEV_SECRET_KEY or len(SECRET_KEY) < 32:
+        raise ImproperlyConfigured('Set a real SECRET_KEY (32+ random characters) when DEBUG is off.')
+    if not ALLOWED_HOSTS or '*' in ALLOWED_HOSTS:
+        raise ImproperlyConfigured('Set ALLOWED_HOSTS to the API\'s own hostnames (no "*") when DEBUG is off.')
+    _insecure = [o for o in CORS_ALLOWED_ORIGINS if not o.startswith('https://')]
+    if _insecure:
+        raise ImproperlyConfigured(f'CORS_ALLOWED_ORIGINS must be https:// in production; remove {", ".join(_insecure)}.')
+
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
     SECURE_SSL_REDIRECT = True
+    # Render's health check calls / over plain HTTP; a redirect there would mark the API unhealthy.
+    SECURE_REDIRECT_EXEMPT = [r'^$']
     SESSION_COOKIE_SECURE = True
     CSRF_COOKIE_SECURE = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
-    SECURE_HSTS_SECONDS = 3600
+    # Start low; raise to 31536000 (a year) once HTTPS has run without problems for a while.
+    SECURE_HSTS_SECONDS = config('SECURE_HSTS_SECONDS', default=3600, cast=int)
+    SECURE_REFERRER_POLICY = 'same-origin'
+    X_FRAME_OPTIONS = 'DENY'
 
 # ── Onboarding ────────────────────────────────────────────────────────────────
 # Bump when the Terms / Privacy Policy change; each user's accepted version is stored.

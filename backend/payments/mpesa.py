@@ -1,7 +1,16 @@
 import base64
 import requests
-from datetime import datetime
 from django.conf import settings
+from django.utils import timezone
+
+# Never let a slow Safaricom response hang a request worker.
+TIMEOUT_SECONDS = 20
+
+
+def is_configured():
+    """True when every Daraja setting an STK push needs is filled in."""
+    return all([settings.MPESA_CONSUMER_KEY, settings.MPESA_CONSUMER_SECRET,
+                settings.MPESA_SHORTCODE, settings.MPESA_PASSKEY, settings.MPESA_CALLBACK_URL])
 
 
 def _get_access_token():
@@ -10,13 +19,15 @@ def _get_access_token():
         if settings.MPESA_ENV == 'sandbox'
         else "https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials"
     )
-    resp = requests.get(url, auth=(settings.MPESA_CONSUMER_KEY, settings.MPESA_CONSUMER_SECRET))
+    resp = requests.get(url, auth=(settings.MPESA_CONSUMER_KEY, settings.MPESA_CONSUMER_SECRET),
+                        timeout=TIMEOUT_SECONDS)
     resp.raise_for_status()
     return resp.json()['access_token']
 
 
 def _get_password():
-    timestamp = datetime.now().strftime('%Y%m%d%H%M%S')
+    # Daraja expects Kenyan time; the server clock (e.g. Render) runs on UTC.
+    timestamp = timezone.localtime().strftime('%Y%m%d%H%M%S')
     raw = f"{settings.MPESA_SHORTCODE}{settings.MPESA_PASSKEY}{timestamp}"
     password = base64.b64encode(raw.encode()).decode()
     return password, timestamp
@@ -54,5 +65,5 @@ def stk_push(phone: str, amount: int, booking_id: str, description: str = "Tunza
     }
 
     headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
-    resp = requests.post(url, json=payload, headers=headers)
+    resp = requests.post(url, json=payload, headers=headers, timeout=TIMEOUT_SECONDS)
     return resp.json()

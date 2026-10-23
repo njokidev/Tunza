@@ -14,8 +14,31 @@
    GitHub repo variable `API_URL` (Settings → Secrets and variables → Actions → Variables)
    to `https://<your-api>.onrender.com/api`, then re-run the APK workflow.
 
+### Production settings
+With `DEBUG=False` the API refuses to start unless `SECRET_KEY` is real (32+ chars),
+`ALLOWED_HOSTS` has no `*`, every `CORS_ALLOWED_ORIGINS` entry is `https://`, and
+`DATABASE_URL` points at Postgres. The Blueprint already sets all four. If a deploy
+fails at startup, the log line says which one is wrong.
+
+### Database backups
+- The free Render database has **no backups and expires after 30 days**. Before real
+  families sign up, change `tunza-db` to a paid plan (e.g. Basic) in Render; that adds
+  daily backups with point-in-time recovery.
+- Until then, the **Database backup** workflow dumps the database every night at 03:30
+  and keeps encrypted copies for 14 days. Turn it on by adding two repo secrets:
+  `PROD_DATABASE_URL` (Render → tunza-db → Connections → External Database URL) and
+  `BACKUP_PASSPHRASE` (a long random passphrase; store it in your password manager).
+  Restore steps are at the top of `.github/workflows/db-backup.yml`.
+
+### M-Pesa (sandbox)
+`POST /api/payments/initiate/ {booking_id, phone?}` sends the STK push. It returns
+503 `payments_unavailable` until `MPESA_CONSUMER_KEY`, `MPESA_CONSUMER_SECRET` and
+`MPESA_PASSKEY` are set on tunza-api (Daraja portal → your sandbox app).
+
 ## 2. Android APK (GitHub Actions)
 - Every push to `main` that touches `mobile/` builds an APK.
+- Or with Expo: `cd mobile && npx eas-cli build -p android --profile preview` builds an
+  installable APK pointed at the production API (needs an Expo login).
 - Manual build: Actions → **Android APK (pilot)** → Run workflow.
 - Download: the run's **tunza-apk** artifact, or the `pilot-N` release.
 - Share the `.apk` with testers (WhatsApp/Drive). On the phone: open it and allow

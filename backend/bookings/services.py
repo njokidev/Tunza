@@ -111,7 +111,9 @@ def expire_stale_requests():
     cutoff = timezone.now() - timedelta(minutes=minutes)
     n = 0
     with transaction.atomic():
-        stale = list(Booking.objects.select_for_update(skip_locked=True)
+        # of=('self',): lock only the booking rows. Postgres refuses FOR UPDATE on the
+        # optional (outer-joined) care_request, and SQLite ignores locks, so tests missed it.
+        stale = list(Booking.objects.select_for_update(skip_locked=True, of=('self',))
                      .filter(status=Booking.Status.PENDING, created_at__lt=cutoff)
                      .select_related('patient', 'caregiver__user', 'care_request'))
         for b in stale:

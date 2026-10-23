@@ -1,0 +1,61 @@
+name: Database backup
+
+# Nightly dump of the production Postgres database, encrypted before upload
+# because this repo is public and the data includes families' personal details.
+#
+# Setup (Settings → Secrets and variables → Actions → Secrets):
+#   PROD_DATABASE_URL   Render → tunza-db → Connections → External Database URL
+#   BACKUP_PASSPHRASE   a long random passphrase; keep a copy somewhere safe
+#
+# Restore:
+#   gpg --decrypt tunza-YYYYMMDD.dump.gpg > tunza.dump
+#   pg_restore --clean --no-owner -d "$DATABASE_URL" tunza.dump
+#
+# This is a stopgap: a paid Render Postgres plan has its own daily backups.
+
+on:
+  schedule:
+    - cron: '30 0 * * *'   # 03:30 Nairobi time
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PROD_DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+    steps:
+      - name: Check secrets
+        id: check
+        run: |
+          if [ -z "$PROD_DATABASE_URL" ] || [ -z "$BACKUP_PASSPHRASE" ]; then
+            echo "Backup secrets not set yet; skipping." >> "$GITHUB_STEP_SUMMARY"
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dump and encrypt
+        if: steps.check.outputs.ready == 'true'
+        run: |
+          set -o pipefail
+          NAME="tunza-$(date -u +%Y%m%d).dump.gpg"
+          # pg_dump 17 can read any older server version Render may run.
+          docker run --rm -e PGURL="$PROD_DATABASE_URL" postgres:17 \
+            sh -c 'pg_dump --format=custom --no-owner "$PGURL"' \
+          | gpg --batch --yes --symmetric --cipher-algo AES256 \
+                --passphrase "$BACKUP_PASSPHRASE" -o "$NAME"
+          test -s "$NAME"
+          echo "NAME=$NAME" >> "$GITHUB_ENV"
+          echo "Backed up $(du -h "$NAME" | cut -f1) to $NAME" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        if: steps.check.outputs.ready == 'true'
+        with:
+          name: ${{ env.NAME }}
+          path: ${{ env.NAME }}
+          retention-days: 14
